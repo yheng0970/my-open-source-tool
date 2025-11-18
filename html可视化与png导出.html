@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NoteCardPreview - Web</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{height:100vh;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:#f5f7fa}
+    header{height:48px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);display:flex;align-items:center;padding:0 14px;color:#fff;font-weight:500}
+    main{flex:1;display:flex;min-height:0}
+    .left{flex:1;display:flex;flex-direction:column;background:#282c34}
+    .right{flex:1;display:flex;flex-direction:column;background:#fff}
+    .bar{height:40px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#21252b;border-bottom:1px solid #181a1f}
+    .bar label{color:#fff;font-size:12px}
+    .bar input,.bar select{height:24px;padding:0 8px;border:1px solid #444;border-radius:4px;background:#fff;color:#222;font-size:12px}
+    .bar button{height:26px;padding:0 10px;border:none;border-radius:4px;background:#2196F3;color:#fff;font-size:12px;cursor:pointer}
+    .bar button:disabled{opacity:.6;cursor:not-allowed}
+    textarea{flex:1;background:#282c34;color:#abb2bf;border:none;outline:none;padding:10px;font-family:"Consolas","Monaco","Courier New",monospace;font-size:13px;line-height:1.5}
+    #viewport{flex:1;display:flex;min-height:0;position:relative}
+    #scaler{flex:1;display:flex;min-height:0}
+    #preview{flex:1;border:none;width:100%;height:100%;background:#fff}
+    footer{height:28px;display:flex;align-items:center;padding:0 10px;background:#fff;border-top:1px solid #e5e7eb;font-size:12px;color:#555}
+  </style>
+</head>
+<body>
+  <header>NoteCardPreview - Web</header>
+  <main>
+    <section class="left">
+      <div class="bar">
+        <button id="btnPaste">粘贴</button>
+        <button id="btnClear">清空</button>
+      </div>
+      <textarea id="htmlInput" placeholder="在这里粘贴或输入HTML..."></textarea>
+    </section>
+    <section class="right">
+      <div class="bar">
+        <label for="imgRatio">尺寸:</label>
+        <input id="imgRatio" type="text" placeholder="1:1" list="ratioPresets" style="width:90px" />
+        <datalist id="ratioPresets">
+          <option value="1:1"></option>
+          <option value="4:3"></option>
+          <option value="3:4"></option>
+          <option value="16:9"></option>
+          <option value="9:16"></option>
+          <option value="2:1"></option>
+          <option value="1:2"></option>
+        </datalist>
+        <label for="imgW">宽度:</label>
+        <input id="imgW" type="number" placeholder="auto" list="widthPresets" style="width:90px" />
+        <datalist id="widthPresets">
+          <option value="512"></option>
+          <option value="720"></option>
+          <option value="1080"></option>
+          <option value="1280"></option>
+          <option value="1920"></option>
+          <option value="2048"></option>
+          <option value="2560"></option>
+        </datalist>
+        <label for="imgZoom">缩放:</label>
+        <input id="imgZoom" type="number" value="100" min="10" max="1000" step="10" style="width:70px" />
+        <span style="color:#fff">%</span>
+        <button id="btnExport" disabled>⚡ 一键导出(100%)</button>
+      </div>
+      <div id="viewport">
+        <div id="scaler">
+          <iframe id="preview" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-pointer-lock allow-popups allow-presentation allow-top-navigation-by-user-activation"></iframe>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer><span id="status">等待输入...</span></footer>
+
+  <!-- 使用 CDN 版本 html2canvas 进行截图渲染 -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+  <script>
+    const htmlInput = document.getElementById('htmlInput');
+    const preview = document.getElementById('preview');
+    const btnExport = document.getElementById('btnExport');
+    const btnPaste = document.getElementById('btnPaste');
+    const btnClear = document.getElementById('btnClear');
+    const statusEl = document.getElementById('status');
+    const imgWEl = document.getElementById('imgW');
+    const imgREl = document.getElementById('imgRatio');
+    const imgZEl = document.getElementById('imgZoom');
+
+    function setStatus(t){ statusEl.textContent=t; }
+
+    function updatePreview(){
+      const html = htmlInput.value.trim();
+      btnExport.disabled = !html;
+      setStatus(html? '可导出':'等待输入...');
+      if(!html){ preview.srcdoc = ''; return; }
+      const doc = `<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+      <style>html,body{margin:0;padding:0;background:#fff}</style></head><body>${html}</body></html>`;
+      preview.srcdoc = doc;
+    }
+
+    htmlInput.addEventListener('input', updatePreview);
+    btnPaste.addEventListener('click', async()=>{
+      try{ const t=await navigator.clipboard.readText(); if(t){ htmlInput.value=t; updatePreview(); } }catch{}
+    });
+    btnClear.addEventListener('click', ()=>{ htmlInput.value=''; updatePreview(); });
+
+    async function waitReady(){
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      const idoc = preview.contentDocument; if(!idoc) return;
+      try{ await Promise.race([idoc.fonts?.ready ?? Promise.resolve(), new Promise(r=>setTimeout(r,800))]); }catch{}
+      const imgs=[...idoc.images];
+      await Promise.all(imgs.map(i=> i.complete&&i.naturalWidth?Promise.resolve():new Promise(res=>{i.addEventListener('load',res,{once:true});i.addEventListener('error',res,{once:true});}))); 
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    }
+
+    // 使用 html2canvas 直接渲染 iframe 内的内容
+    async function captureFullArea() {
+      const idoc = preview.contentDocument;
+      if(!idoc || !idoc.body) return null;
+      if(typeof html2canvas !== 'function') return null;
+
+      await waitReady();
+
+      let baseCanvas;
+      try {
+        const zm = parseInt(imgZEl.value||'100',10);
+        const zf = Math.max(0.5, Math.min(5, (Number.isFinite(zm)?zm:100)/100));
+        const baseScale = (window.devicePixelRatio || 1) * zf;
+        baseCanvas = await html2canvas(idoc.body, {
+          backgroundColor: '#fff',
+          useCORS: true,
+          scale: Math.max(1, Math.min(5, baseScale))
+        });
+      } catch (e) {
+        console.error('html2canvas capture failed', e);
+        return null;
+      }
+
+      let out = baseCanvas;
+
+      // 尺寸/比例调整，与原应用逻辑保持一致
+      try{
+        const wRaw = (imgWEl.value||'').trim();
+        const ratioRaw = (imgREl.value||'').trim();
+        const tW = parseInt(wRaw,10);
+        const wantW = Number.isFinite(tW)&&tW>0;
+        let rw=null,rh=null; 
+        const m = ratioRaw.match(/^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/);
+        if(m){ rw=parseFloat(m[1]); rh=parseFloat(m[2]); if(!(rw>0&&rh>0)){rw=rh=null;} }
+
+        if(wantW && rw && rh){
+          const dw=tW, dh=Math.max(1, Math.round(tW*(rh/rw)));
+          const cvs=document.createElement('canvas'); cvs.width=dw; cvs.height=dh;
+          const c=cvs.getContext('2d',{alpha:false}); c.imageSmoothingEnabled=true; c.imageSmoothingQuality='high';
+          c.fillStyle='#fff'; c.fillRect(0,0,dw,dh);
+          const s=Math.min(dw/out.width, dh/out.height);
+          const drawW=Math.max(1,Math.round(out.width*s));
+          const drawH=Math.max(1,Math.round(out.height*s));
+          const dx=Math.floor((dw-drawW)/2), dy=Math.floor((dh-drawH)/2);
+          c.drawImage(out,0,0,out.width,out.height,dx,dy,drawW,drawH);
+          out = document.createElement('canvas');
+          out.width=cvs.width; out.height=cvs.height; out.getContext('2d').drawImage(cvs,0,0);
+        } else if (wantW) {
+          const dw=tW, dh=Math.max(1, Math.round(out.height*(tW/out.width)));
+          const cvs=document.createElement('canvas'); cvs.width=dw; cvs.height=dh;
+          cvs.getContext('2d',{alpha:false}).drawImage(out,0,0,out.width,out.height,0,0,dw,dh);
+          out = document.createElement('canvas');
+          out.width=cvs.width; out.height=cvs.height; out.getContext('2d').drawImage(cvs,0,0);
+        } else if (rw && rh) {
+          const dw=out.width, dh=Math.max(1, Math.round(out.width*(rh/rw)));
+          const cvs=document.createElement('canvas'); cvs.width=dw; cvs.height=dh;
+          const c=cvs.getContext('2d',{alpha:false}); c.imageSmoothingEnabled=true; c.imageSmoothingQuality='high';
+          c.fillStyle='#fff'; c.fillRect(0,0,dw,dh);
+          const s=Math.min(dw/out.width, dh/out.height);
+          const drawW=Math.max(1,Math.round(out.width*s));
+          const drawH=Math.max(1,Math.round(out.height*s));
+          const dx=Math.floor((dw-drawW)/2), dy=Math.floor((dh-drawH)/2);
+          c.drawImage(out,0,0,out.width,out.height,dx,dy,drawW,drawH);
+          out = document.createElement('canvas');
+          out.width=cvs.width; out.height=cvs.height; out.getContext('2d').drawImage(cvs,0,0);
+        }
+      }catch(e){
+        console.error('resize failed', e);
+      }
+
+      const blob = await new Promise((res)=> out.toBlob(b=>res(b),'image/png'));
+      return blob;
+    }
+
+    btnExport.addEventListener('click', async()=>{
+      if(!htmlInput.value.trim()) return;
+      btnExport.disabled=true; btnExport.textContent='⏳ 导出中...';
+      const blob = await captureFullArea();
+      if(!blob){
+        alert('自动截图不可用，请检查浏览器控制台错误或尝试更换浏览器');
+        btnExport.disabled=false; btnExport.textContent='⚡ 一键导出(100%)';
+        return;
+      }
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download=`html-preview-shot-${Date.now()}.png`; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url),200);
+      btnExport.disabled=false; btnExport.textContent='⚡ 一键导出(100%)';
+    });
+
+    updatePreview();
+  </script>
+</body>
+</html>

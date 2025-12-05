@@ -1,0 +1,2308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>笔记卡片 - HTML实时预览工具</title>
+  
+  <!-- html2canvas CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  
+  <style>
+    /* =================== 重置样式 =================== */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: #f5f7fa;
+    }
+
+    /* =================== 容器布局 =================== */
+    .container {
+      width: 100%;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* =================== 标题栏 =================== */
+    .header {
+      height: 50px;
+      padding: 0 30px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .header h1 {
+      font-size: 18px;
+      color: #fff;
+      font-weight: 500;
+      margin: 0;
+    }
+
+    /* =================== 主内容区 =================== */
+    .main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* =================== 左侧输入区 =================== */
+    .input-section {
+      flex: 0 1 400px;
+      min-width: 280px;
+      max-width: 50%;
+      display: flex;
+      flex-direction: column;
+      background: #282c34;
+      border-right: 1px solid #e1e4e8;
+    }
+
+    .section-title {
+      padding: 12px 20px;
+      font-size: 13px;
+      color: #fff;
+      background: #21252b;
+      border-bottom: 1px solid #181a1f;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      z-index: 10; /* 防止被预览层覆盖，保证按钮可点 */
+    }
+
+    .title-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 4px 12px;
+      font-size: 12px;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .btn-paste {
+      background: #4CAF50;
+    }
+
+    .btn-paste:hover {
+      background: #45a049;
+    }
+
+    .btn-clear {
+      background: #f44336;
+    }
+
+    .btn-clear:hover {
+      background: #da190b;
+    }
+
+    .btn-export {
+      background: #2196F3;
+    }
+
+    .btn-export:hover {
+      background: #0b7dda;
+    }
+
+    .btn-export:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+    
+    .ratio-select {
+      padding: 4px 8px;
+      font-size: 12px;
+      color: #333;
+      border: 1px solid #e1e4e8;
+      border-radius: 4px;
+      background: #fff;
+    }
+
+    .width-input {
+      width: 88px;
+      padding: 4px 8px;
+      font-size: 12px;
+      color: #333;
+      border: 1px solid #e1e4e8;
+      border-radius: 4px;
+      background: #fff;
+    }
+
+    #htmlInput {
+      flex: 1;
+      width: 100%;
+      padding: 20px;
+      border: none;
+      background: #282c34;
+      color: #abb2bf;
+      font-size: 14px;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      line-height: 1.6;
+      resize: none;
+      outline: none;
+      tab-size: 2;
+    }
+
+    #htmlInput::placeholder {
+      color: #5c6370;
+    }
+
+    /* =================== 右侧预览区 =================== */
+    .preview-section {
+      flex: 1 1 auto;
+      min-width: 50%;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+    }
+
+    #preview {
+      flex: 1;
+      padding: 0;
+      overflow: auto;
+      background: #fff;
+      border: none;
+      width: 100%;
+      height: 100%;
+    }
+
+    .preview-viewport {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .preview-scaler {
+      flex: 1;
+      position: relative;
+      display: flex;
+      z-index: 0;
+    }
+
+    .preview-section.ratio-mode {
+      overflow: auto;
+      background: #fff;
+    }
+
+    .preview-section.ratio-mode .preview-viewport {
+      flex: 0 0 auto;
+      width: 100%;
+      height: auto;
+      aspect-ratio: var(--ratio);
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      margin: 12px;
+      background: #fff;
+    }
+
+    .preview-section.ratio-mode .preview-scaler {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: 0 0;
+      z-index: 0; /* 永远在标题下方 */
+    }
+
+    /* =================== 底部状态栏 =================== */
+    .footer {
+      height: 30px;
+      padding: 0 20px;
+      background: #fff;
+      border-top: 1px solid #e1e4e8;
+      display: flex;
+      align-items: center;
+      font-size: 12px;
+      color: #666;
+    }
+
+    /* =================== 滚动条样式 =================== */
+    #htmlInput::-webkit-scrollbar,
+    #preview::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    #htmlInput::-webkit-scrollbar-track {
+      background: #21252b;
+    }
+
+    #htmlInput::-webkit-scrollbar-thumb {
+      background: #4b5263;
+      border-radius: 5px;
+    }
+
+    #htmlInput::-webkit-scrollbar-thumb:hover {
+      background: #5c6370;
+    }
+
+    #preview::-webkit-scrollbar-track {
+      background: #f1f1f1;
+    }
+
+    #preview::-webkit-scrollbar-thumb {
+      background: #888;
+      border-radius: 5px;
+    }
+
+    #preview::-webkit-scrollbar-thumb:hover {
+      background: #555;
+    }
+
+    /* =================== 响应式 =================== */
+    @media (max-width: 768px) {
+      .main {
+        flex-direction: column;
+      }
+      
+      .input-section,
+      .preview-section {
+        flex: 1;
+        min-height: 50%;
+      }
+    }
+    .log-panel {
+      height: 160px;
+      display: none;
+      background: #0f1115;
+      color: #9aa0a6;
+      border-top: 1px solid #e1e4e8;
+      overflow: auto;
+    }
+    .log-output {
+      padding: 8px 12px;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- 标题栏 -->
+    <header class="header">
+      <h1>🎨 HTML 实时预览工具</h1>
+    </header>
+    
+    <!-- 主内容区 -->
+    <main class="main">
+      <!-- 左侧：HTML代码输入 -->
+      <div class="input-section">
+        <div class="section-title">
+          <span>📝 HTML 代码</span>
+          <div class="title-buttons">
+            <button class="btn btn-paste" onclick="handlePaste()">📋 粘贴</button>
+            <button class="btn btn-clear" onclick="handleClear()">🗑️ 清空</button>
+          </div>
+        </div>
+        <textarea id="htmlInput" placeholder="在这里输入HTML代码，右侧会实时显示效果...
+
+示例：
+<h1>你好，世界！</h1>
+<p style='color: blue;'>这是一段蓝色的文字</p>
+<button onclick='alert(&quot;点击成功！&quot;)'>点我试试</button>"></textarea>
+      </div>
+      
+      <!-- 右侧：实时预览 -->
+      <div class="preview-section">
+        <div class="section-title">
+          <span>👀 实时预览</span>
+          <div class="title-buttons">
+            <select id="ratioSelect" class="ratio-select" title="显示比例">
+              <option value="auto">默认</option>
+              <option value="3:4">3:4</option>
+              <option value="4:3">4:3</option>
+              <option value="1:1">1:1</option>
+              <option value="9:16">9:16</option>
+              <option value="16:9">16:9</option>
+            </select>
+            <select id="borderSelect" class="ratio-select" title="边距">
+              <option value="0">无边距</option>
+              <option value="16">留白16</option>
+              <option value="24">留白24</option>
+              <option value="32">留白32</option>
+            </select>
+            <button id="autoExportBtn" class="btn btn-export" onclick="handleAutoExport(event)" disabled>⚡ 一键导出(100%)</button>
+          </div>
+        </div>
+        <div id="previewViewport" class="preview-viewport">
+          <div id="previewScaler" class="preview-scaler">
+            <iframe id="preview" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-pointer-lock allow-popups allow-presentation allow-top-navigation-by-user-activation"></iframe>
+          </div>
+        </div>
+      </div>
+    </main>
+    <div id="logPanel" class="log-panel"><pre id="logOutput" class="log-output"></pre></div>
+    
+    <!-- 底部状态栏 -->
+    <footer class="footer">
+      <span id="status">等待输入...</span>
+    </footer>
+  </div>
+
+  <script>
+    console.log('[App] HTML预览工具启动', new Date().toLocaleString());
+
+    // 获取元素
+    const htmlInput = document.getElementById('htmlInput');
+    const preview = document.getElementById('preview');
+    const status = document.getElementById('status');
+    const autoExportBtn = document.getElementById('autoExportBtn');
+    const ratioSelect = document.getElementById('ratioSelect');
+    const borderSelect = document.getElementById('borderSelect');
+    const previewViewport = document.getElementById('previewViewport');
+    const previewScaler = document.getElementById('previewScaler');
+    const logPanel = document.getElementById('logPanel');
+    const logOutput = document.getElementById('logOutput');
+    const logToggleBtn = document.getElementById('logToggleBtn');
+    const exportLogBtn = document.getElementById('exportLogBtn');
+    let DESIGN_BASE_WIDTH = 1200;
+    let RATIO_Y_OFFSET = 0; // 比例模式下，为消除顶部空白而向上平移的未缩放像素值
+    let EXPORT_BLEED = 0;
+    let EXPORT_MAX_COVERAGE = false; // 关闭最大覆盖导出，恢复原有行为
+    let CURRENT_PREVIEW_URL = null; // 预览用 blob: URL，避免 srcdoc 截断
+    let RAW_MODE = false; // 原样渲染开关
+    const FORCE_EXTRA_TRIM = false;
+    const ADV_TRIM_EDGES = true; // 开启背景去边裁切（仅无边距模式生效），自动移除白边
+    const FORCE_FULLPAGE_CROP = false; // 关闭强制全幅，启用内容自适应裁切
+    const Logger = (() => {
+      const key = 'html_preview_logs';
+      let list = [];
+      const maxEntries = 5000;
+      const ts = () => new Date().toISOString();
+      const safeStr = (x) => { try { return typeof x === 'string' ? x : JSON.stringify(x); } catch { return String(x); } };
+      const write = (level, msg, extra) => {
+        const item = { t: ts(), level, msg, extra };
+        list.push(item);
+        if (list.length > maxEntries) list = list.slice(-Math.floor(maxEntries * 0.8));
+        try { localStorage.setItem(key, JSON.stringify(list)); } catch {}
+        if (logOutput) {
+          logOutput.textContent += `[${item.t}] [${level}] ${msg}${extra !== undefined ? ' ' + safeStr(extra) : ''}\n`;
+          if (logPanel && logPanel.style.display !== 'none') logPanel.scrollTop = logPanel.scrollHeight;
+        }
+      };
+      try {
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          list = JSON.parse(saved);
+          if (logOutput) logOutput.textContent = list.map(i => `[${i.t}] [${i.level}] ${i.msg}${i.extra ? ' ' + safeStr(i.extra) : ''}`).join('\n') + (list.length ? '\n' : '');
+        }
+      } catch {}
+      return {
+        log: (m, e) => write('INFO', m, e),
+        warn: (m, e) => write('WARN', m, e),
+        error: (m, e) => write('ERROR', m, e),
+        section: (m) => write('----', m),
+        clear: () => { list = []; try { localStorage.removeItem(key); } catch {}; if (logOutput) logOutput.textContent = ''; },
+        all: () => list.slice(),
+        export: () => {
+          const text = logOutput?.textContent || list.map(i => `[${i.t}] [${i.level}] ${i.msg}${i.extra ? ' ' + safeStr(i.extra) : ''}`).join('\n');
+          const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = `html-preview-logs-${Date.now()}.txt`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(a.href), 200);
+        },
+        toggle: () => { if (!logPanel) return false; const show = logPanel.style.display === 'none'; logPanel.style.display = show ? 'block' : 'none'; return show; },
+        check: () => { const hasError = list.some(i => i.level === 'ERROR'); const warnCount = list.filter(i => i.level === 'WARN').length; return { count: list.length, hasError, warnCount }; }
+      };
+    })();
+    
+
+    // 初始化示例代码
+    const exampleHTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    h1 {
+      text-align: center;
+    }
+    .card {
+      background: white;
+      color: #333;
+      padding: 20px;
+      border-radius: 10px;
+      margin: 20px 0;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+  <h1>🎉 欢迎使用 HTML 预览工具</h1>
+  
+  <div class="card">
+    <h2>快速开始</h2>
+    <p>在左侧编辑HTML代码，右侧会实时显示效果。</p>
+    <button onclick="alert('按钮点击成功！')">点击测试</button>
+  </div>
+  
+  <div class="card">
+    <h2>支持的功能</h2>
+    <ul>
+      <li>完整的HTML标签</li>
+      <li>内联CSS样式</li>
+      <li>JavaScript交互</li>
+      <li>实时预览</li>
+    </ul>
+  </div>
+</body>
+</html>`;
+
+    // 简单清洗：移除<script>和内联 on* 事件，避免运行时报错导致白屏
+    function sanitizeHTML(code) {
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(code, 'text/html');
+        doc.querySelectorAll('script').forEach(s => s.remove());
+        doc.querySelectorAll('*').forEach(el => {
+          for (const a of Array.from(el.attributes)) {
+            if (/^on/i.test(a.name)) el.removeAttribute(a.name);
+          }
+        });
+        const hasDoctype = /<!DOCTYPE/i.test(code);
+        if (hasDoctype) {
+          const doctype = doc.doctype ? `<!DOCTYPE ${doc.doctype.name}>\n` : '<!DOCTYPE html>\n';
+          return doctype + doc.documentElement.outerHTML;
+        }
+        return doc.body.innerHTML;
+      } catch (e) {
+        return code;
+      }
+    }
+
+    // 处理HTML代码：如果不是完整文档，自动包裹（预览不做清洗，保持原始效果）
+    function getPreviewHtml(code) {
+      if (!code.trim()) return '';
+      if (RAW_MODE) {
+        // 原样渲染：仅在检测到文档起点时，从文档起点开始，其他不做任何改写
+        try {
+          const lower = code.toLowerCase();
+          let i = lower.indexOf('<!doctype');
+          if (i === -1) i = lower.indexOf('<html');
+          return i > 0 ? code.slice(i) : code;
+        } catch { return code; }
+      }
+
+      // 预清洗：若包含多份文档或带有“实际我的完整代码：”之类的标注，
+      // 以“第一份 <!DOCTYPE>”为主；若在标注后才出现第一份 DOCTYPE，才从标注后开始。
+      try {
+        const original = code;
+        const lower = original.toLowerCase();
+        const marker = '实际我的完整代码';
+        const firstDoctype = lower.indexOf('<!doctype');
+        const markerPos = lower.indexOf(marker);
+        let chosen = original;
+        const hasStyles = (s) => /<style\b|rel=["']?stylesheet["']?/i.test(s);
+        if (markerPos !== -1) {
+          const dtAfterMarker = lower.indexOf('<!doctype', markerPos);
+          if (dtAfterMarker !== -1) {
+            const cand = original.slice(dtAfterMarker);
+            if (/<html\b/i.test(cand) && hasStyles(cand)) chosen = cand;
+          } else {
+            const cand = original.slice(markerPos + marker.length);
+            if (/<html\b/i.test(cand) && hasStyles(cand)) chosen = cand;
+          }
+        } else if (firstDoctype > 0) {
+          chosen = original.slice(firstDoctype);
+        }
+        code = chosen;
+      } catch {}
+
+      // 简单判空工具
+      const looksEmpty = (html) => {
+        try {
+          const p = new DOMParser();
+          const d = p.parseFromString(html, 'text/html');
+          const text = (d.body?.innerText || '').replace(/\s+/g, ' ').trim();
+          const visuals = d.body ? d.body.querySelectorAll('img,svg,canvas,video,table,div,section,article,main,p,h1,h2,h3,h4,h5,h6').length : 0;
+          return text.length < 2 && visuals < 1;
+        } catch { return false; }
+      };
+      // 重建策略：从原始文本中抽取样式与主体内容，重新拼装为完整文档
+      const rebuildFromPieces = (raw) => {
+        try {
+          const getAll = (re) => Array.from(raw.matchAll(re)).map(m => m[0]).join('\n');
+          const styles = getAll(new RegExp('<style[^>]*>[\\s\\S]*?<\\/style>', 'ig'));
+          const links = getAll(/<link[^>]+rel=["']?stylesheet["']?[^>]*>/ig);
+          let bodyHTML = '';
+          const mBody = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+          if (mBody) bodyHTML = (mBody[1] || '').trim();
+          if (!bodyHTML) {
+            // 去掉 <head> 块与包裹标签后作为主体
+            let tmp = raw.replace(/<head[^>]*>[\s\S]*?<\/head>/ig, '');
+            tmp = tmp.replace(/<!DOCTYPE[^>]*>/ig, '').replace(/<\/?html[^>]*>/ig, '');
+            tmp = tmp.replace(new RegExp('<title[^>]*>[\\s\\S]*?<\\/title>', 'ig'), '')
+                     .replace(/<meta[^>]*>/ig, '')
+                     .replace(new RegExp('<script[\\s\\S]*?<\\\\/script>', 'ig'), '');
+            bodyHTML = tmp.trim();
+          }
+          return `<!DOCTYPE html>\n<html>\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  ${links}\n  ${styles}\n</head>\n<body>\n${bodyHTML}\n</body>\n</html>`;
+        } catch { return raw; }
+      };
+
+      // 如果包含 <html> 或 DOCTYPE，尝试修复明显的结构错误（例如把出现在 <head> 的块级元素移到 <body>），
+      // 若修复后字符串变化过大则回退到原文
+      if (/<html\b/i.test(code)) {
+        // 修复未闭合的 <style>/<script>，避免后续内容被当作样式/脚本吞掉
+        try {
+          const count = (s, re) => (s.match(re) || []).length;
+          const styleOpen = count(code, /<style\b[^>]*>/ig);
+          const styleClose = count(code, new RegExp('<\\/style>', 'ig'));
+          if (styleClose < styleOpen) code += '</style>'.repeat(styleOpen - styleClose);
+          const scriptOpen = count(code, /<script\b[^>]*>/ig);
+          const scriptClose = count(code, new RegExp('<\\\/script>', 'ig'));
+          if (scriptClose < scriptOpen) code += '<\\/script>'.repeat(scriptOpen - scriptClose);
+        } catch {}
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(code, 'text/html');
+          const body = doc.body || doc.getElementsByTagName('body')[0];
+          const head = doc.head || doc.getElementsByTagName('head')[0];
+          if (head && body) {
+            const illegalSel = 'div,section,article,main,header,footer,nav,aside,h1,h2,h3,h4,h5,h6,p,ul,ol,li,table,hr,form,iframe,canvas,svg,video,audio';
+            const illegals = Array.from(head.querySelectorAll(illegalSel));
+            illegals.forEach(n => { try { body.insertBefore(n, body.firstChild); } catch {} });
+            // 移除 <head> 早期出现的孤立闭合标签
+            const orphanCloses = Array.from(head.childNodes).filter(n => n.nodeType === 3 && /<\/(div|section|p)>/i.test(n.textContent || ''));
+            orphanCloses.forEach(n => head.removeChild(n));
+          }
+          // 若源文档在 </html> 之后还有标签，尽可能拼接进 body
+          try {
+            const lowerSrc = code.toLowerCase();
+            const htmlEnd = lowerSrc.lastIndexOf('</html>');
+            if (htmlEnd > 0 && htmlEnd + 7 < code.length) {
+              const tail = code.slice(htmlEnd + 7).trim();
+              if (tail && /<\w+[\s>]/.test(tail)) {
+                const frag = parser.parseFromString(`<!DOCTYPE html><html><body>${tail}</body></html>`, 'text/html');
+                Array.from(frag.body.childNodes).forEach(n => body.appendChild(doc.importNode(n, true)));
+              }
+            }
+          } catch {}
+          const doctype = doc.doctype ? `<!DOCTYPE ${doc.doctype.name}>` : '<!DOCTYPE html>';
+          const normalized = doctype + '\n' + doc.documentElement.outerHTML;
+          if (normalized.length < code.length * 0.7) return code; // 保护：变短太多时回退
+          // 若规范化后几乎没有可见内容，使用重建策略
+          if (looksEmpty(normalized)) return rebuildFromPieces(code);
+          return normalized;
+        } catch { return code; }
+      }
+
+      // 片段模式：移除任何散落在片段里的 DOCTYPE，避免被插入到 <body> 中导致渲染异常
+      let fragment = code.replace(/<!DOCTYPE[^>]*>/ig, '').trim();
+
+      // 如果片段里包含 <head> 或 <body>，尽量抽取出来再包装
+      let extractedHead = '';
+      const mHead = fragment.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+      if (mHead) {
+        extractedHead = mHead[1] || '';
+        fragment = fragment.replace(mHead[0], '').trim();
+      }
+
+      const mBody = fragment.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      if (mBody) {
+        fragment = (mBody[1] || '').trim();
+      }
+
+      let out = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>预览</title>
+  ${extractedHead}
+</head>
+<body>
+${fragment}
+</body>
+ </html>`;
+      if (looksEmpty(out)) out = rebuildFromPieces(code);
+      return out;
+    }
+
+    function applyDisplayRatio(val) {
+      const section = preview.closest('.preview-section');
+      if (!section) return;
+      if (!val || val === 'auto') {
+        section.classList.remove('ratio-mode');
+        section.style.removeProperty('--ratio');
+        RATIO_Y_OFFSET = 0;
+      } else {
+        section.classList.add('ratio-mode');
+        section.style.setProperty('--ratio', String(val).replace(':', ' / '));
+        RATIO_Y_OFFSET = 0;
+      }
+      requestAnimationFrame(updateRatioScale);
+    }
+
+    function parseRatio(v) {
+      const m = String(v || '').match(/^(\d+)\s*:\s*(\d+)$/);
+      if (!m) return null;
+      return [parseFloat(m[1]), parseFloat(m[2])];
+    }
+
+    function updateRatioScale() {
+      if (!previewViewport || !previewScaler) return;
+      const val = ratioSelect ? ratioSelect.value : 'auto';
+      const section = preview.closest('.preview-section');
+      if (!section) return;
+      if (!val || val === 'auto') {
+        previewScaler.style.transform = '';
+        previewScaler.style.width = '';
+        previewScaler.style.height = '';
+        previewScaler.style.left = '';
+        previewScaler.style.top = '';
+        preview.style.width = '';
+        preview.style.height = '';
+        return;
+      }
+      const r = parseRatio(val);
+      if (!r) return;
+      const [rw, rh] = r;
+      const designW = Math.max(800, DESIGN_BASE_WIDTH);
+      const designH = Math.max(1, Math.round(designW * rh / rw));
+      const rect = previewViewport.getBoundingClientRect();
+      const vw = rect.width || 1;
+      const vh = rect.height || 1;
+      const s = Math.max(0.1, Math.min(vw / designW, vh / designH));
+      previewScaler.style.width = designW + 'px';
+      previewScaler.style.height = designH + 'px';
+      preview.style.width = '100%';
+      preview.style.height = '100%';
+      // 居中放置缩放后的内容（水平居中，顶部对齐）
+      const scaledW = designW * s;
+      const offsetX = Math.max(0, (vw - scaledW) / 2);
+      const offsetY = 0;
+      previewScaler.style.left = offsetX + 'px';
+      // 使用绝对定位的 top（屏幕像素）来“裁切”顶部空白
+      previewScaler.style.top = (-RATIO_Y_OFFSET) + 'px';
+      previewScaler.style.transform = 'scale(' + s + ')';
+    }
+
+    // 在比例模式下，自动检测并修正 iframe 内顶部大空白（包括内部滚动容器的情况）
+    function getScrollableContainer(el, doc) {
+      const dv = doc.defaultView || doc.parentWindow;
+      const isScrollable = (node) => {
+        if (!node) return false;
+        const st = dv.getComputedStyle(node);
+        const oy = st.overflowY, ox = st.overflowX;
+        const yScroll = (oy === 'auto' || oy === 'scroll') && (node.scrollHeight - node.clientHeight > 10);
+        const xScroll = (ox === 'auto' || ox === 'scroll') && (node.scrollWidth - node.clientWidth > 10);
+        return yScroll || xScroll;
+      };
+      let cur = el;
+      while (cur && cur !== doc.body && cur !== doc.documentElement) {
+        if (isScrollable(cur)) return cur;
+        cur = cur.parentElement;
+      }
+      return doc.scrollingElement || doc.documentElement || doc.body;
+    }
+    function getAbsTopByOffset(el, doc) {
+      let y = 0, cur = el;
+      while (cur && cur !== doc.body) { y += cur.offsetTop || 0; cur = cur.offsetParent; }
+      return Math.max(0, Math.round(y));
+    }
+    function autoFixTopBlank() {
+      try {
+        if (!ratioSelect || ratioSelect.value === 'auto') return; // 默认模式不改动
+        const doc = preview.contentDocument;
+        const win = preview.contentWindow;
+        if (!doc || !win) return;
+
+        const dv = doc.defaultView || win;
+        // 优先寻找标题/主标题类元素
+        const prefer = Array.from(doc.body.querySelectorAll(
+          'h1, h2, [role="heading"], .title, .page-title, .page_header, .page-header, .heading, .hero-title, .hero__title, [data-title]'
+        ));
+        let target = null;
+        for (const el of prefer) {
+          const cs = dv.getComputedStyle(el);
+          if (cs.display === 'none' || cs.visibility === 'hidden' || cs.position === 'fixed') continue;
+          const rect = el.getBoundingClientRect();
+          if (rect.height < 20) continue;
+          const txt = (el.textContent || '').trim();
+          if (txt.length < 2) continue;
+          if (rect.top >= 8) { target = el; break; }
+        }
+        // 若未找到标题，则退回到通用候选
+        if (!target) {
+          const candidates = Array.from(doc.body.querySelectorAll(
+            'main, section, article, [role="main"], [role="banner"], .content, .container, .hero, .header, p, div'
+          ));
+          for (const el of candidates) {
+            const cs = dv.getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden' || cs.position === 'fixed') continue;
+            const rect = el.getBoundingClientRect();
+            if (rect.height < 20) continue;
+            const txt = (el.textContent || '').trim();
+            if (txt.length < 2 && !/^(MAIN|SECTION|ARTICLE)$/i.test(el.tagName)) continue;
+            if (rect.top >= 8) { target = el; break; }
+          }
+          if (!target) return;
+        }
+
+        // 收集可滚动容器（含 documentElement/body 与内部滚动容器）
+        const containers = [doc.documentElement, doc.body];
+        const all = Array.from(doc.querySelectorAll('*'));
+        for (const el of all) {
+          // 仅考虑包含目标的祖先（减少计算）
+          if (!el.contains(target)) continue;
+          const cs = dv.getComputedStyle(el);
+          const oy = cs.overflowY;
+          const ox = cs.overflowX;
+          if ((oy === 'auto' || oy === 'scroll' || ox === 'auto' || ox === 'scroll') && (el.scrollHeight - el.clientHeight > 10)) {
+            containers.push(el);
+          }
+        }
+
+        // 定位滚动容器并优先使用“内部滚动”对齐
+        const container = getScrollableContainer(target, doc);
+        let isWindow = false;
+        try {
+          isWindow = (container === doc.documentElement || container === doc.body || container === (doc.scrollingElement || null));
+          const containerTopAbs = isWindow ? 0 : getAbsTopByOffset(container, doc);
+          const targetTopAbs = getAbsTopByOffset(target, doc);
+          const desiredScrollTop = Math.max(0, Math.round(targetTopAbs - containerTopAbs - 12));
+          const maxScroll = isWindow
+            ? Math.max(0, (doc.documentElement.scrollHeight || doc.body.scrollHeight || 0) - (win.innerHeight || doc.documentElement.clientHeight || 0))
+            : Math.max(0, container.scrollHeight - container.clientHeight);
+          if (maxScroll > 0) {
+            if (isWindow) { win.scrollTo(0, Math.min(desiredScrollTop, maxScroll)); }
+            else { container.scrollTop = Math.min(desiredScrollTop, maxScroll); }
+          }
+        } catch {}
+
+        // 在下一帧测量剩余顶部距离，若仍有空白则裁切补齐
+        try {
+          requestAnimationFrame(() => {
+            const isWin = (container === doc.documentElement || container === doc.body || container === (doc.scrollingElement || null));
+            const rectTop = target.getBoundingClientRect().top;
+            const containerTop = isWin ? 0 : container.getBoundingClientRect().top;
+            const r = parseRatio(ratioSelect.value);
+            let s = 1;
+            if (r) {
+              const [rw, rh] = r;
+              const designW = Math.max(800, DESIGN_BASE_WIDTH);
+              const designH = Math.max(1, Math.round(designW * rh / rw));
+              const rectVp = previewViewport.getBoundingClientRect();
+              const vw = rectVp.width || 1, vh = rectVp.height || 1;
+              s = Math.max(0.1, Math.min(vw / designW, vh / designH));
+            }
+            const residualPx = Math.max(0, Math.round((rectTop - containerTop - 12) * s));
+            RATIO_Y_OFFSET = residualPx > 2 ? residualPx : 0;
+            updateRatioScale();
+          });
+        } catch {}
+      } catch {}
+    }
+
+    // 实时更新预览
+    function updatePreview() {
+      console.log('[Preview] 更新预览');
+      
+      const htmlCode = htmlInput.value;
+      const previewHtml = getPreviewHtml(htmlCode);
+      
+      const isFileEnv = (() => { try { return location.protocol === 'file:'; } catch { return false; } })();
+      if (isFileEnv) {
+        // file:// 环境优先使用 document.write，兼容性最好
+        try {
+          const doc = preview.contentDocument || preview.contentWindow?.document;
+          if (doc) { doc.open(); doc.write(previewHtml); doc.close(); }
+          else { preview.setAttribute('srcdoc', previewHtml); }
+        } catch { preview.setAttribute('srcdoc', previewHtml); }
+      } else {
+        // http(s) 环境：首选 blob URL，避免 srcdoc 长度限制
+        try {
+          const blob = new Blob([previewHtml], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          preview.removeAttribute('srcdoc');
+          preview.src = url;
+          preview.addEventListener('load', () => {
+            try { if (CURRENT_PREVIEW_URL) URL.revokeObjectURL(CURRENT_PREVIEW_URL); } catch {}
+            CURRENT_PREVIEW_URL = url;
+          }, { once: true });
+        } catch {
+          try {
+            const doc = preview.contentDocument || preview.contentWindow?.document;
+            if (doc) { doc.open(); doc.write(previewHtml); doc.close(); }
+            else { preview.setAttribute('srcdoc', previewHtml); }
+          } catch { preview.setAttribute('srcdoc', previewHtml); }
+        }
+      }
+      
+      // 更新状态
+      const charCount = htmlCode.length;
+      const lineCount = htmlCode.split('\n').length;
+      const sum = Logger.check();
+      status.textContent = `已输入 ${charCount} 字符 | ${lineCount} 行 | 日志 ${sum.count}`;
+      
+      // 更新导出按钮状态
+      autoExportBtn.disabled = !htmlCode.trim();
+      
+      console.log('[Preview] 更新完成', { 字符数: charCount, 行数: lineCount });
+      Logger.log('预览更新', { chars: charCount, lines: lineCount });
+      requestAnimationFrame(updateRatioScale);
+    }
+
+    // 一键粘贴
+    async function handlePaste() {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim()) {
+          htmlInput.value = text;
+          updatePreview();
+          status.textContent = '已从剪贴板粘贴';
+          return;
+        }
+        status.textContent = '剪贴板为空，请在左侧输入框按 Ctrl+V 粘贴';
+        htmlInput.focus();
+      } catch (err) {
+        const manual = window.prompt('无法直接读取剪贴板，请在此粘贴(Ctrl+V)后点确定：');
+        if (manual !== null) {
+          htmlInput.value = manual;
+          updatePreview();
+          status.textContent = '已通过手动粘贴导入';
+        } else {
+          status.textContent = '无法一键读取剪贴板，请在左侧输入框按 Ctrl+V 粘贴';
+          htmlInput.focus();
+        }
+      }
+    }
+
+    // 原样渲染开关（按钮显示“原样开/关”）
+    function toggleRawMode() {
+      try {
+        RAW_MODE = !RAW_MODE;
+        const btn = document.getElementById('rawModeBtn');
+        if (btn) btn.textContent = RAW_MODE ? '原样开' : '原样关';
+        updatePreview();
+      } catch (e) {
+        console.warn('toggleRawMode failed', e);
+      }
+    }
+
+    // 一键清空
+    function handleClear() {
+      htmlInput.value = '';
+      updatePreview();
+      console.log('🗑️ 已清空');
+      Logger.log('清空内容');
+    }
+
+    // 导出PNG
+    async function handleExportPng() {
+      if (!htmlInput.value.trim()) {
+        alert('请先输入HTML代码');
+        return;
+      }
+
+      exportBtn.textContent = '⏳ 导出中...';
+      exportBtn.disabled = true;
+
+      try {
+        console.log('📐 开始导出PNG...');
+
+        // 获取iframe
+        const iframeDoc = preview.contentDocument || preview.contentWindow.document;
+        if (!iframeDoc || !iframeDoc.body) {
+          throw new Error('预览内容未就绪');
+        }
+
+        // 等待渲染完成
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // 获取实际尺寸
+        const bodyWidth = Math.max(
+          iframeDoc.body.scrollWidth,
+          iframeDoc.body.offsetWidth,
+          iframeDoc.documentElement.scrollWidth,
+          iframeDoc.documentElement.offsetWidth,
+          1200
+        );
+        
+        const bodyHeight = Math.max(
+          iframeDoc.body.scrollHeight,
+          iframeDoc.body.offsetHeight,
+          iframeDoc.documentElement.scrollHeight,
+          iframeDoc.documentElement.offsetHeight,
+          800
+        );
+
+        console.log('📐 内容尺寸:', { width: bodyWidth, height: bodyHeight });
+
+        // 优先使用 rasterizeHTML 提供的高保真渲染（更接近浏览器实际效果）
+        let canvas
+        try {
+          const scale = 2
+          canvas = document.createElement('canvas')
+          canvas.width = Math.max(1, Math.floor(bodyWidth * scale))
+          canvas.height = Math.max(1, Math.floor(bodyHeight * scale))
+          const ctx = canvas.getContext('2d', { alpha: false })
+          ctx.imageSmoothingEnabled = true
+          ctx.imageSmoothingQuality = 'high'
+          ctx.scale(scale, scale)
+
+          // rasterizeHTML 渲染 iframe 的 Document 到我们创建的 canvas 上
+          await rasterizeHTML.drawDocument(iframeDoc, canvas, {
+            width: bodyWidth,
+            height: bodyHeight,
+            zoom: 1
+          })
+        } catch (e) {
+          console.warn('rasterizeHTML 失败，回退到 html2canvas:', e?.message)
+          // 回退：html2canvas（尽量保持简单，避免多余处理）
+          canvas = await html2canvas(iframeDoc.body, {
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+            width: bodyWidth,
+            height: bodyHeight,
+            windowWidth: bodyWidth,
+            windowHeight: bodyHeight
+          })
+        }
+
+        console.log('📊 Canvas生成:', { width: canvas.width, height: canvas.height });
+
+        if (canvas.width === 0 || canvas.height === 0) {
+          throw new Error('生成的图片尺寸为0');
+        }
+
+        // 下载PNG
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            throw new Error('图片生成失败');
+          }
+          
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `html-preview-${Date.now()}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          
+          setTimeout(() => URL.revokeObjectURL(url), 100);
+          
+          console.log('✅ PNG导出成功');
+        Logger.log('PNG导出成功');
+          
+          // 提示用户
+          alert('PNG导出成功！\n\n💡 提示：如果导出的图片颜色不理想，\n可以使用浏览器截图功能：\n- Windows: Win + Shift + S\n- Mac: Cmd + Shift + 4\n- Chrome: 右键 → 检查 → 截图');
+        }, 'image/png', 1.0);
+
+      } catch (err) {
+        console.error('❌ 导出失败:', err);
+        Logger.error('导出失败', { message: err?.message });
+        alert(`导出失败：${err.message}\n\n可能的原因：\n1. 内容包含跨域资源\n2. 浏览器不支持html2canvas\n3. HTML代码有错误`);
+      } finally {
+        exportBtn.textContent = '📥 导出PNG';
+        exportBtn.disabled = !htmlInput.value.trim();
+      }
+    }
+
+    async function waitForStableLayout(doc, timeout = 2500, minFrames = 3) {
+      const deadline = Date.now() + timeout;
+      let prev = '';
+      let stable = 0;
+      return await new Promise((resolve) => {
+        const step = () => {
+          try {
+            const b = doc.body, d = doc.documentElement;
+            const w = Math.max(b.scrollWidth, d.scrollWidth, b.offsetWidth, d.offsetWidth, 1);
+            const h = Math.max(b.scrollHeight, d.scrollHeight, b.offsetHeight, d.offsetHeight, 1);
+            const sig = `${w}x${h}`;
+            if (sig === prev) stable++; else stable = 0;
+            prev = sig;
+            if (stable >= minFrames || Date.now() > deadline) { resolve(); return; }
+          } catch { resolve(); return; }
+          requestAnimationFrame(step);
+        };
+        step();
+      });
+    }
+
+    // 一键导出（高保真，禁用屏幕捕获，仅渲染预览HTML）
+    async function handleAutoExport(evt) {
+      if (!htmlInput.value.trim()) return;
+
+      autoExportBtn.textContent = '⏳ 导出中...';
+      autoExportBtn.disabled = true;
+      Logger.section('一键导出开始');
+
+      // 小工具：等待资源
+      const waitImages = async (doc) => {
+        const imgs = Array.from(doc.images || []);
+        await Promise.all(imgs.map(img => img.complete && img.naturalWidth ? Promise.resolve() : new Promise(res => {
+          img.addEventListener('load', res, { once: true });
+          img.addEventListener('error', res, { once: true });
+        })));
+      };
+
+      try {
+        const iframeDoc = preview.contentDocument || preview.contentWindow.document;
+        if (!iframeDoc || !iframeDoc.body) throw new Error('预览内容未就绪');
+
+        // 等待一帧 + 字体/图片就绪
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        try { await Promise.race([iframeDoc.fonts?.ready ?? Promise.resolve(), new Promise(r=>setTimeout(r,800))]); } catch {}
+        await waitImages(iframeDoc);
+        await waitForStableLayout(iframeDoc, 2500, 3);
+        Logger.log('资源与布局就绪');
+        const computeContentBounds = (doc) => {
+          const dv = doc.defaultView || window;
+          const se = doc.scrollingElement || doc.documentElement || doc.body;
+          const sx = (se && (se.scrollLeft || 0)) || (dv && dv.pageXOffset) || 0;
+          const sy = (se && (se.scrollTop || 0)) || (dv && dv.pageYOffset) || 0;
+          const docW = Math.max(doc.documentElement.scrollWidth || 0, doc.body.scrollWidth || 0);
+          const docH = Math.max(doc.documentElement.scrollHeight || 0, doc.body.scrollHeight || 0);
+          // 扣除 UA 默认的 body 外边距对 rect 的影响
+          const bodyRect = (doc.body && doc.body.getBoundingClientRect) ? doc.body.getBoundingClientRect() : { left: 0, top: 0 };
+          let minL = Infinity, minT = Infinity, maxR = -Infinity, maxB = -Infinity;
+          const pxNums = (s) => (String(s||'').match(/-?\d*\.?\d+px/g)||[]).map(v=>parseFloat(v));
+          const addShadowExt = (base, cs) => {
+            try {
+              let eL=0,eT=0,eR=0,eB=0;
+              const add = (h=0,v=0,blur=0,spread=0) => {
+                const ah=Math.abs(h), av=Math.abs(v); const r=Math.max(0, blur)+Math.max(0, spread);
+                eL = Math.max(eL, Math.max(0, -h) + r);
+                eR = Math.max(eR, Math.max(0,  h) + r);
+                eT = Math.max(eT, Math.max(0, -v) + r);
+                eB = Math.max(eB, Math.max(0,  v) + r);
+              };
+              const bs = cs.boxShadow;
+              if (bs && bs !== 'none') {
+                const m = bs.match(/(?:inset\s*)?(-?\d*\.?\d+px)\s+(-?\d*\.?\d+px)(?:\s+(-?\d*\.?\d+px))?(?:\s+(-?\d*\.?\d+px))?/gi) || [];
+                for (const seg of m) {
+                  const p = pxNums(seg);
+                  if (p.length>=2) add(p[0], p[1], p[2]||0, p[3]||0);
+                }
+              }
+              const ts = cs.textShadow;
+              if (ts && ts !== 'none') {
+                const m = ts.match(/(-?\d*\.?\d+px)\s+(-?\d*\.?\d+px)(?:\s+(-?\d*\.?\d+px))?/gi) || [];
+                for (const seg of m) {
+                  const p = pxNums(seg);
+                  if (p.length>=2) add(p[0], p[1], p[2]||0, 0);
+                }
+              }
+              const fil = cs.filter;
+              if (fil && /drop-shadow\(/i.test(fil)) {
+                const ms = fil.match(/drop-shadow\(([^)]+)\)/gi) || [];
+                for (const seg of ms) {
+                  const p = pxNums(seg);
+                  if (p.length>=2) add(p[0], p[1], p[2]||0, p[3]||0);
+                }
+              }
+              if (fil && /blur\(/i.test(fil)) {
+                const b = pxNums(fil.match(/blur\(([^)]+)\)/i)?.[0]||'')[0]||0;
+                if (b>0) add(0,0,b,0);
+              }
+              const ow = (parseFloat(cs.outlineWidth)||0) + Math.max(0, parseFloat(cs.outlineOffset)||0);
+              if (ow>0) { eL=Math.max(eL,ow); eR=Math.max(eR,ow); eT=Math.max(eT,ow); eB=Math.max(eB,ow); }
+              return {l:eL,t:eT,r:eR,b:eB};
+            } catch { return {l:0,t:0,r:0,b:0}; }
+          };
+          const nodes = Array.from(doc.body.querySelectorAll('*'));
+          for (const el of nodes) {
+            const cs = dv.getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+            const rect = el.getBoundingClientRect();
+            if (!rect || rect.width < 1 || rect.height < 1) continue;
+            let left = rect.left - (bodyRect.left || 0);
+            let top = rect.top - (bodyRect.top || 0);
+            let right = rect.right - (bodyRect.left || 0);
+            let bottom = rect.bottom - (bodyRect.top || 0);
+            const eSelf = addShadowExt({left,top,right,bottom}, cs);
+            const csB = dv.getComputedStyle(el, '::before');
+            const csA = dv.getComputedStyle(el, '::after');
+            const eB = csB ? addShadowExt({left,top,right,bottom}, csB) : {l:0,t:0,r:0,b:0};
+            const eA = csA ? addShadowExt({left,top,right,bottom}, csA) : {l:0,t:0,r:0,b:0};
+            const eL = Math.max(eSelf.l, eB.l, eA.l), eT = Math.max(eSelf.t, eB.t, eA.t), eR = Math.max(eSelf.r, eB.r, eA.r), eBtm = Math.max(eSelf.b, eB.b, eA.b);
+            left -= eL; top -= eT; right += eR; bottom += eBtm;
+            minL = Math.min(minL, left);
+            minT = Math.min(minT, top);
+            maxR = Math.max(maxR, right);
+            maxB = Math.max(maxB, bottom);
+          }
+          const full = { x: 0, y: 0, w: Math.max(1, Math.round(docW)), h: Math.max(1, Math.round(docH)) };
+          if (!isFinite(minL) || !isFinite(minT) || !isFinite(maxR) || !isFinite(maxB)) {
+            Logger.warn('bounds为空，退回全幅');
+            return full;
+          }
+          // 紧贴裁切（不再额外扩展，避免把页面边距带入）
+          const FUDGE = 0;
+          let x = Math.max(0, Math.floor(minL + sx - FUDGE));
+          let y = Math.max(0, Math.floor(minT + sy - FUDGE));
+          let w = Math.min(docW - x, Math.max(1, Math.ceil((maxR - minL) + FUDGE * 2)));
+          let h = Math.min(docH - y, Math.max(1, Math.ceil((maxB - minT) + FUDGE * 2)));
+
+          // 安全回退：若裁切导致面积或宽/高远小于整页，判定为"危险裁剪"，直接回退全幅
+          // 根据内容尺寸动态计算容差（小图用小容差，大图用大容差）
+          const SAFE_TRIM_TOL = Math.max(6, Math.min(250, Math.ceil(Math.min(docW, docH) * 0.05))); // 5%的动态容差（允许更宽边缘修剪）
+          const leftGap = Math.max(0, x);
+          const topGap = Math.max(0, y);
+          const rightGap = Math.max(0, Math.round(docW - (x + w)));
+          const bottomGap = Math.max(0, Math.round(docH - (y + h)));
+          const areaRatio = (w * h) / Math.max(1, docW * docH);
+          const safeEdge = leftGap <= SAFE_TRIM_TOL && rightGap <= SAFE_TRIM_TOL && topGap <= SAFE_TRIM_TOL && bottomGap <= SAFE_TRIM_TOL;
+          const safeArea = areaRatio >= 0.85; // 面积至少保留85%
+          if (!(safeEdge && safeArea)) {
+            // 回退方案：根据 body 的 CSS margin 去除四边默认留白（如 UA 默认 8px）
+            try {
+              const csBody = dv.getComputedStyle(doc.body);
+              const mL = parseFloat(csBody.marginLeft) || 0;
+              const mT = parseFloat(csBody.marginTop) || 0;
+              const mR = parseFloat(csBody.marginRight) || 0;
+              const mB = parseFloat(csBody.marginBottom) || 0;
+              const xAlt = Math.max(0, Math.round(mL));
+              const yAlt = Math.max(0, Math.round(mT));
+              const wAlt = Math.max(1, Math.round(docW - mL - mR));
+              const hAlt = Math.max(1, Math.round(docH - mT - mB));
+              if (wAlt > 1 && hAlt > 1 && wAlt <= docW && hAlt <= docH) {
+                Logger.warn('使用 body 边距回退裁切', { mL, mT, mR, mB });
+                return { x: xAlt, y: yAlt, w: wAlt, h: hAlt };
+              }
+            } catch {}
+            Logger.warn('裁切过多，退回全幅', { leftGap, rightGap, topGap, bottomGap, areaRatio });
+            return full;
+          }
+          Logger.log('使用紧贴裁切', { x, y, w, h });
+          return { x, y, w, h };
+        };
+        
+        // 计算完整尺寸（提前计算，供后续使用）
+        const b = iframeDoc.body, d = iframeDoc.documentElement;
+        const width = Math.max(b.scrollWidth, b.offsetWidth, d.scrollWidth, d.offsetWidth, 100);
+        const height = Math.max(b.scrollHeight, b.offsetHeight, d.scrollHeight, d.offsetHeight, 100);
+        
+        // 根据实际内容尺寸动态计算容差值和限制
+        const contentArea = width * height;
+        const contentSize = Math.max(width, height);
+        const sizeCategory = contentSize < 800 ? 'small' : contentSize < 2000 ? 'medium' : contentSize < 4000 ? 'large' : 'xlarge';
+        Logger.log('内容尺寸分析', { width, height, area: contentArea, size: contentSize, category: sizeCategory });
+        
+        // 无边框导出：计算内容边界（随后根据策略决定是否使用）
+        let contentBounds = computeContentBounds(iframeDoc);
+        if (FORCE_FULLPAGE_CROP) {
+          contentBounds = { x: 0, y: 0, w: width, h: height };
+          Logger.warn('强制全幅裁切已启用，忽略内容边界');
+        } else {
+          Logger.log('内容边界', contentBounds);
+          // 若开启最大覆盖，取内容边界与“去掉 body margin 的整页”并集，再小幅扩大
+          if (EXPORT_MAX_COVERAGE) {
+            try {
+              const dv = iframeDoc.defaultView || window;
+              const csBody = dv.getComputedStyle(iframeDoc.body);
+              const mL = Math.max(0, Math.round(parseFloat(csBody.marginLeft) || 0));
+              const mT = Math.max(0, Math.round(parseFloat(csBody.marginTop) || 0));
+              const mR = Math.max(0, Math.round(parseFloat(csBody.marginRight) || 0));
+              const mB = Math.max(0, Math.round(parseFloat(csBody.marginBottom) || 0));
+              const pageRect = { x: mL, y: mT, w: Math.max(1, width - mL - mR), h: Math.max(1, height - mT - mB) };
+              const left = Math.min(contentBounds.x, pageRect.x);
+              const top = Math.min(contentBounds.y, pageRect.y);
+              const right = Math.max(contentBounds.x + contentBounds.w, pageRect.x + pageRect.w);
+              const bottom = Math.max(contentBounds.y + contentBounds.h, pageRect.y + pageRect.h);
+              const bleed = Math.min(48, Math.max(8, Math.ceil(Math.min(width, height) * 0.008))); // 约0.8%~48px
+              const x = Math.max(0, Math.floor(left - bleed));
+              const y = Math.max(0, Math.floor(top - bleed));
+              const w = Math.min(width - x, Math.max(1, Math.ceil((right - left) + bleed * 2)));
+              const h = Math.min(height - y, Math.max(1, Math.ceil((bottom - top) + bleed * 2)));
+              const merged = { x, y, w, h };
+              Logger.log('最大覆盖并集裁切', { pageRect, merged, bleed });
+              contentBounds = merged;
+            } catch (e) { Logger.warn('最大覆盖并集失败', e?.message || e); }
+          }
+        }
+
+        // 预取并内联外部图片资源（img/src 与 CSS 背景图），避免跨域导致导出空白/不完整
+        const inlinedImageMap = {};
+        try {
+          const absUrl = (u) => {
+            try { return new URL(u, iframeDoc.baseURI || window.location.href).href; } catch { return u; }
+          };
+          const isDataUrl = (u) => /^\s*data:/i.test(u || '');
+          const isSvg = (u) => /\.svg(\?|$)/i.test(u || '');
+          const isRaster = (u) => /\.(png|jpe?g|gif|webp|bmp|avif|tif?f)(\?|$)/i.test(u || '');
+          const extractCssUrls = (val) => {
+            if (!val || typeof val !== 'string') return [];
+            const out = [];
+            const re = /url\(([^)]+)\)/ig;
+            let m;
+            while ((m = re.exec(val))) {
+              let raw = m[1].trim().replace(/^['"]/,'').replace(/['"]$/,'');
+              if (!raw) continue;
+              out.push(raw);
+            }
+            return out;
+          };
+          const toBase64 = (ab) => {
+            const bytes = new Uint8Array(ab);
+            let bin = '';
+            const chunk = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunk) {
+              bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+            }
+            return btoa(bin);
+          };
+          const guessMimeFromUrl = (u) => {
+            const lower = String(u || '').toLowerCase().split('?')[0].split('#')[0];
+            if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+            if (lower.endsWith('.png')) return 'image/png';
+            if (lower.endsWith('.gif')) return 'image/gif';
+            if (lower.endsWith('.webp')) return 'image/webp';
+            if (lower.endsWith('.bmp')) return 'image/bmp';
+            if (lower.endsWith('.avif')) return 'image/avif';
+            if (lower.endsWith('.tif') || lower.endsWith('.tiff')) return 'image/tiff';
+            return 'application/octet-stream';
+          };
+          const fetchAsDataUrl = async (url) => {
+            try {
+              const res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' });
+              if (!res.ok) return null;
+              const buf = await res.arrayBuffer();
+              const ctHeader = res.headers.get('content-type');
+              const ct = (ctHeader && ctHeader.includes('/')) ? ctHeader : guessMimeFromUrl(url);
+              return `data:${ct};base64,${toBase64(buf)}`;
+            } catch { return null; }
+          };
+
+
+          const dv = iframeDoc.defaultView || window;
+          const candidates = new Set();
+          // 收集 <img src>
+          Array.from(iframeDoc.images || []).forEach(img => {
+            const src = (img.getAttribute('src') || '').trim();
+            if (!src || isDataUrl(src) || isSvg(src)) return;
+            candidates.add(absUrl(src));
+          });
+          // 收集 CSS 背景图
+          const allEls = Array.from(iframeDoc.querySelectorAll('*'));
+          allEls.forEach(el => {
+            try {
+              const cs = dv.getComputedStyle(el);
+              ['backgroundImage','maskImage','borderImageSource'].forEach(prop => {
+                const val = cs.getPropertyValue(prop);
+                const urls = extractCssUrls(val);
+                urls.forEach(u => { if (!isDataUrl(u) && !isSvg(u)) candidates.add(absUrl(u)); });
+              });
+            } catch {}
+          });
+          // 限制数量，避免过大
+          const MAX_FETCH = 64;
+          const urlList = Array.from(candidates).slice(0, MAX_FETCH);
+          await Promise.all(urlList.map(async (u) => {
+            if (inlinedImageMap[u]) return;
+            const data = await fetchAsDataUrl(u);
+            if (data) inlinedImageMap[u] = data;
+          }));
+          console.log('[Export] inlined images:', Object.keys(inlinedImageMap).length);
+          
+          // 关键修复：在原始文档中就替换所有图片，避免 html2canvas 克隆时加载失败
+          Array.from(iframeDoc.images || []).forEach(img => {
+            try {
+              const src = (img.getAttribute('src') || '').trim();
+              if (!src || src.startsWith('data:')) return;
+              const abs = absUrl(src);
+              const data = inlinedImageMap[abs];
+              if (data) {
+                img.setAttribute('data-original-src', src);
+                img.setAttribute('src', data);
+              } else if (!src.startsWith('data:')) {
+                // 没有成功预取的图片，直接替换为透明图
+                img.setAttribute('data-original-src', src);
+                img.setAttribute('src', 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
+              }
+            } catch {}
+          });
+          Logger.log('原始文档图片已替换', { total: iframeDoc.images.length });
+        } catch (e) { console.warn('inline raster images failed', e); }
+
+        // 预取并内联 Font Awesome 等 Web 字体，避免导出时图标丢失
+        let inlinedFontCss = '';
+        try {
+          // 找到所有可能的字体样式表（优先 Font Awesome）
+          const links = Array.from(iframeDoc.querySelectorAll('link[rel="stylesheet"]'));
+          const fontCssLinks = links
+            .map(l => l.href || l.getAttribute('href') || '')
+            .filter(h => /font[- ]?awesome|all\.min\.css/i.test(h));
+
+          const fetchText = async (url) => {
+            try {
+              const res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' });
+              if (!res.ok) return null;
+              return await res.text();
+            } catch { return null; }
+          };
+
+          const toBase64 = (ab) => {
+            const bytes = new Uint8Array(ab);
+            let bin = '';
+            const chunk = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunk) {
+              bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+            }
+            return btoa(bin);
+          };
+
+          const fetchFontAsDataUrl = async (baseHref, fontUrl) => {
+            let abs;
+            try { abs = new URL(fontUrl, baseHref).href; } catch { abs = fontUrl; }
+            try {
+              const res = await fetch(abs, { mode: 'cors', credentials: 'omit', cache: 'force-cache' });
+              if (!res.ok) return null;
+              const buf = await res.arrayBuffer();
+              const b64 = toBase64(buf);
+              const mime = /\.woff2(\?|$)/i.test(abs) ? 'font/woff2' : /\.woff(\?|$)/i.test(abs) ? 'font/woff' : 'application/octet-stream';
+              return `data:${mime};base64,${b64}`;
+            } catch { return null; }
+          };
+
+          const cssList = (await Promise.all(fontCssLinks.map(fetchText))).filter(Boolean);
+          const inlinedList = [];
+          for (let i = 0; i < cssList.length; i++) {
+            const cssText = cssList[i];
+            const baseHref = fontCssLinks[i];
+            // 仅处理 @font-face 块并替换 url()
+            const replaced = await (async () => {
+              let out = cssText;
+              // 找到所有 url(...) 引用
+              const urlRegex = /url\(([^)]+)\)/ig;
+              const refs = Array.from(cssText.matchAll(urlRegex)).map(m => ({ raw: m[0], url: m[1].replace(/[\"']/g, '').trim() }));
+              // 优先替换 woff2/woff
+              for (const r of refs) {
+                if (!/\.woff2?(\?|$)/i.test(r.url)) continue;
+                const dataUrl = await fetchFontAsDataUrl(baseHref, r.url);
+                if (dataUrl) {
+                  out = out.split(r.raw).join(`url(${dataUrl})`);
+                }
+              }
+              // 强制快速显示
+              out = out.replace(/font-display\s*:\s*[^;]+;/ig, 'font-display: swap;');
+              return out;
+            })();
+            inlinedList.push(replaced);
+          }
+          inlinedFontCss = inlinedList.join('\n');
+        } catch (e) { console.warn('inline fonts failed', e); }
+
+        // 预取外部 SVG 资源：sprite 与 <img src="*.svg">
+        const externalSpriteMap = {};
+        const externalSvgMap = {};
+        try {
+          const XLINK = 'http://www.w3.org/1999/xlink';
+          const useNodes = Array.from(iframeDoc.querySelectorAll('use'));
+          const spriteUrls = Array.from(new Set(useNodes.map(u => {
+            let href = u.getAttribute('href') || u.getAttributeNS?.(XLINK, 'href');
+            if (!href) return null;
+            const i = href.indexOf('#');
+            if (i <= 0) return null; // 没有外部路径
+            const base = href.slice(0, i);
+            try { return new URL(base, window.location.href).href; } catch { return base; }
+          }).filter(Boolean)));
+
+          const imgNodes = Array.from(iframeDoc.querySelectorAll('img'))
+            .filter(img => (img.getAttribute('src') || '').trim().toLowerCase().endsWith('.svg'));
+          const svgUrls = Array.from(new Set(imgNodes.map(img => {
+            const src = img.getAttribute('src');
+            try { return new URL(src, window.location.href).href; } catch { return src; }
+          }).filter(Boolean)));
+
+          const fetchText = async (url) => {
+            try {
+              const res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' });
+              if (!res.ok) return null;
+              return await res.text();
+            } catch { return null; }
+          };
+
+          await Promise.all([
+            ...spriteUrls.map(async (u) => { const t = await fetchText(u); if (t) externalSpriteMap[u] = t; }),
+            ...svgUrls.map(async (u) => { const t = await fetchText(u); if (t) externalSvgMap[u] = t; })
+          ]);
+        } catch (e) { console.warn('prefetch svg failed', e); }
+
+        // 将 Font Awesome 的伪元素内容预处理为真实文本，避免个别环境下 ::before 未被渲染
+        try {
+          const iconCandidates = Array.from(iframeDoc.querySelectorAll('i[class*="fa-"], span[class*="fa-"], .fa-solid, .fa-regular, .fa-brands'));
+          iconCandidates.forEach(el => {
+            try {
+              const before = iframeDoc.defaultView?.getComputedStyle(el, '::before');
+              const content = before?.getPropertyValue('content') || '';
+              const fam = before?.getPropertyValue('font-family') || '';
+              const weight = before?.getPropertyValue('font-weight') || '';
+              if (content && content !== 'none' && content !== 'normal') {
+                // 去除包裹引号并解码 \fXXXX 转义
+                const m = content.match(/^\s*['"](.*)['"]\s*$/);
+                let glyph = m ? m[1] : content;
+                try {
+                  glyph = glyph.replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
+                } catch {}
+                if (glyph && glyph !== '\\') {
+                  el.setAttribute('data-fa-content', glyph);
+                  if (fam) el.setAttribute('data-fa-font', fam);
+                  if (weight) el.setAttribute('data-fa-weight', weight);
+                }
+              }
+            } catch {}
+          });
+        } catch (e) { console.warn('prepare fa glyphs failed', e); }
+
+        // 仅使用 html2canvas 双通道渲染，避免 sandbox 脚本报错
+        // 基准缩放用用户偏好（默认2.5x，Alt=3x，Shift=4x）
+        const userHint = (() => {
+          try {
+            return {
+              shift: !!(evt && evt.shiftKey),
+              alt: !!(evt && (evt.altKey || evt.metaKey)),
+              ctrl: !!(evt && evt.ctrlKey)
+            };
+          } catch { return { shift:false, alt:false, ctrl:false }; }
+        })();
+        const preferredScale = userHint.shift ? 4 : userHint.alt ? 3 : 2.5;
+        // 超采样（按住 Ctrl/⌘）：更高内部渲染倍率，导出前再高质量下采样
+        const renderScale = userHint.ctrl ? Math.min(preferredScale * 1.75, preferredScale + 2) : preferredScale;
+        const scale = renderScale;
+        
+        // 动态计算最大尺寸限制，根据内容实际尺寸自适应
+        const aspectRatio = width / height;
+        const isPortrait = aspectRatio < 0.8;
+        const isLandscape = aspectRatio > 1.25;
+        const isSquare = !isPortrait && !isLandscape;
+        
+        // 根据内容尺寸和长宽比动态调整上限
+        let maxSide, maxPixels;
+        if (contentSize < 600) {
+          // 小尺寸内容：允许更高的放大倍率
+          maxSide = 12000;
+          maxPixels = 280 * 1024 * 1024;
+        } else if (contentSize < 1500) {
+          // 中等尺寸：标准限制
+          maxSide = 10000;
+          maxPixels = 240 * 1024 * 1024;
+        } else if (contentSize < 3500) {
+          // 较大尺寸：略微收紧
+          maxSide = 8192;
+          maxPixels = 220 * 1024 * 1024;
+        } else {
+          // 超大尺寸：保守限制
+          maxSide = 6144;
+          maxPixels = 180 * 1024 * 1024;
+        }
+        
+        // 对于极端长宽比，进一步调整
+        if (aspectRatio > 3 || aspectRatio < 0.33) {
+          maxSide = Math.floor(maxSide * 1.5); // 放宽单边限制
+          Logger.log('检测到极端长宽比，调整限制', { aspectRatio, maxSide });
+        }
+        
+        const scaleBySide = maxSide / Math.max(width, height);
+        const scaleByArea = Math.sqrt(maxPixels / Math.max(1, width * height));
+        let scaleClamped = Math.min(scale, scaleBySide, scaleByArea);
+        
+        // 动态调整最小缩放：小内容允许更高缩放，大内容设置更高下限
+        const minScale = contentSize < 600 ? 1.0 : contentSize < 1500 ? 0.75 : 0.5;
+        scaleClamped = Math.max(minScale, scaleClamped);
+        
+        console.log('[Export] size=', { width, height, aspectRatio, maxSide, maxPixels, preferredScale, scaleClamped });
+        Logger.log('缩放计算', { preferredScale, scaleBySide, scaleByArea, scaleClamped, minScale });
+        const SIMPLE_MODE = false;
+
+        const renderWith = async (useFO) => {
+          try {
+            return await html2canvas(iframeDoc.documentElement, {
+            scale: scaleClamped,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+            foreignObjectRendering: useFO,
+            width: width,
+            height: height,
+            windowWidth: width,
+            windowHeight: height,
+            scrollX: 0,
+            scrollY: 0,
+            x: 0,
+            y: 0,
+            imageTimeout: 0,
+            onclone: (clonedDoc, clonedWin) => {
+              // 全局禁用错误事件，防止图片加载失败导致导出中断
+              try {
+                clonedDoc.addEventListener('error', (e) => { e.preventDefault(); e.stopPropagation(); return false; }, true);
+                if (clonedWin) {
+                  clonedWin.onerror = () => false;
+                  clonedWin.addEventListener('error', (e) => { e.preventDefault(); e.stopPropagation(); return false; }, true);
+                }
+              } catch {}
+              
+              // 基本清理
+              clonedDoc.querySelectorAll('script').forEach(s => s.remove());
+              clonedDoc.querySelectorAll('*').forEach(el => {
+                for (const a of Array.from(el.attributes)) {
+                  if (/^on/i.test(a.name)) el.removeAttribute(a.name);
+                }
+              });
+              // 应用已预取的位图资源：替换 CSS 背景图到 data:URL，避免跨域污染
+              // 注意：<img> 已在原始文档中替换，这里只处理 CSS 背景
+              try {
+                const dv2 = clonedDoc.defaultView || window;
+                const replaceCssUrls = (val) => {
+                  if (!val || typeof val !== 'string') return val;
+                  return val.replace(/url\(([^)]+)\)/ig, (m, p1) => {
+                    let raw = String(p1).trim().replace(/^['"]/,'').replace(/['"]$/,'');
+                    const abs = (() => { try { return new URL(raw, clonedDoc.baseURI || window.location.href).href; } catch { return raw; } })();
+                    const data = inlinedImageMap[abs];
+                    if (data) return `url("${data}")`;
+                    return m;
+                  });
+                };
+                // CSS 背景图替换
+                Array.from(clonedDoc.querySelectorAll('*')).forEach(el => {
+                  try {
+                    const cs = dv2.getComputedStyle(el);
+                    const bg = cs.getPropertyValue('background-image');
+                    const mask = cs.getPropertyValue('mask-image');
+                    const borderImg = cs.getPropertyValue('border-image-source');
+                    const bg2 = replaceCssUrls(bg);
+                    const mask2 = replaceCssUrls(mask);
+                    const border2 = replaceCssUrls(borderImg);
+                    if (bg2 && bg2 !== bg) el.style.backgroundImage = bg2;
+                    if (mask2 && mask2 !== mask) el.style.maskImage = mask2;
+                    if (border2 && border2 !== borderImg) el.style.borderImageSource = border2;
+                  } catch {}
+                });
+              } catch {}
+              if (!SIMPLE_MODE) {
+                try {
+                  if (inlinedFontCss) {
+                    const s = clonedDoc.createElement('style');
+                    s.setAttribute('data-inline-fonts', 'true');
+                    s.textContent = inlinedFontCss;
+                    clonedDoc.head.insertBefore(s, clonedDoc.head.firstChild || null);
+                    Array.from(clonedDoc.querySelectorAll('link[rel="stylesheet"]')).forEach(l => {
+                      const href = l.href || l.getAttribute('href') || '';
+                      if (/font[- ]?awesome|all\.min\.css/i.test(href)) l.remove();
+                    });
+                  }
+                } catch {}
+                try {
+                  const nodes = Array.from(clonedDoc.querySelectorAll('[data-fa-content]'));
+                  nodes.forEach(el => {
+                    if (!el.textContent || !el.textContent.trim()) {
+                      const glyph = el.getAttribute('data-fa-content');
+                      const fam = el.getAttribute('data-fa-font') || 'Font Awesome 6 Free, Font Awesome 6 Pro, Font Awesome 5 Free';
+                      const weight = el.getAttribute('data-fa-weight') || '900';
+                      const span = clonedDoc.createElement('span');
+                      span.textContent = glyph;
+                      span.style.fontFamily = fam;
+                      span.style.fontWeight = weight;
+                      span.style.fontStyle = 'normal';
+                      span.style.lineHeight = '1';
+                      span.style.display = 'inline-block';
+                      span.style.webkitFontSmoothing = 'antialiased';
+                      span.style.mozOsxFontSmoothing = 'grayscale';
+                      el.appendChild(span);
+                    }
+                    el.removeAttribute('data-fa-content');
+                    el.removeAttribute('data-fa-font');
+                    el.removeAttribute('data-fa-weight');
+                  });
+                } catch {}
+                try {
+                  const dv2 = clonedDoc.defaultView || window;
+                  const els = Array.from(clonedDoc.querySelectorAll('*'));
+                  els.forEach(el => {
+                    try {
+                      const st = dv2.getComputedStyle(el);
+                      const oy = st.overflowY, ox = st.overflowX;
+                      const needY = (oy === 'auto' || oy === 'scroll' || oy === 'hidden') && (el.scrollHeight - el.clientHeight > 2);
+                      const needX = (ox === 'auto' || ox === 'scroll' || ox === 'hidden') && (el.scrollWidth - el.clientWidth > 2);
+                      if (needY) {
+                        el.style.minHeight = '0';
+                        el.style.maxHeight = 'none';
+                        el.style.height = el.scrollHeight + 'px';
+                        el.style.overflowY = 'visible';
+                      }
+                      if (needX) {
+                        el.style.minWidth = '0';
+                        el.style.maxWidth = 'none';
+                        el.style.width = Math.max(el.scrollWidth, el.clientWidth) + 'px';
+                        el.style.overflowX = 'visible';
+                      }
+                    } catch {}
+                  });
+                } catch {}
+                try {
+                  const XLINK = 'http://www.w3.org/1999/xlink';
+                  const svgNS = 'http://www.w3.org/2000/svg';
+                  const parser = new DOMParser();
+                  const uses = Array.from(clonedDoc.querySelectorAll('use'));
+                  uses.forEach(u => {
+                    let href = u.getAttribute('href') || u.getAttributeNS?.(XLINK, 'href');
+                    if (!href) return;
+                    const idx = href.indexOf('#');
+                    if (idx === -1) return;
+                    const base = href.slice(0, idx);
+                    const symbolId = href.slice(idx + 1);
+                    let target = null;
+                    if (!base) {
+                      target = clonedDoc.getElementById(symbolId);
+                    } else {
+                      const xml = externalSpriteMap[(() => { try { return new URL(base, window.location.href).href; } catch { return base; } })()];
+                      if (xml) {
+                        const spriteDoc = parser.parseFromString(xml, 'image/svg+xml');
+                        target = spriteDoc.getElementById(symbolId);
+                      }
+                    }
+                    if (!target) return;
+                    const wrapper = clonedDoc.createElementNS(svgNS, 'svg');
+                    const vb = target.getAttribute('viewBox');
+                    if (vb) wrapper.setAttribute('viewBox', vb);
+                    ['x','y','width','height','transform'].forEach(a => { if (u.hasAttribute(a)) wrapper.setAttribute(a, u.getAttribute(a)); });
+                    if (u.getAttribute('class')) wrapper.setAttribute('class', u.getAttribute('class'));
+                    if (u.getAttribute('style')) wrapper.setAttribute('style', u.getAttribute('style'));
+                    Array.from(target.childNodes).forEach(ch => wrapper.appendChild(ch.cloneNode(true)));
+                    u.replaceWith(wrapper);
+                  });
+                } catch {}
+                try {
+                  const parser = new DOMParser();
+                  const imgs = Array.from(clonedDoc.querySelectorAll('img'));
+                  imgs.forEach(img => {
+                    const src = img.getAttribute('src') || '';
+                    const lower = src.toLowerCase();
+                    let svgText = null;
+                    if (lower.startsWith('data:image/svg+xml')) {
+                      const comma = src.indexOf(',');
+                      const meta = src.slice(0, comma).toLowerCase();
+                      const payload = src.slice(comma + 1);
+                      try {
+                        svgText = meta.includes(';base64') ? atob(payload) : decodeURIComponent(payload);
+                      } catch {}
+                    } else if (lower.endsWith('.svg')) {
+                      let abs;
+                      try { abs = new URL(src, window.location.href).href; } catch { abs = src; }
+                      svgText = externalSvgMap[abs] || null;
+                    }
+                    if (!svgText) return;
+                    const doc = parser.parseFromString(svgText, 'image/svg+xml');
+                    const svgEl = doc.documentElement;
+                    if (!svgEl || svgEl.nodeName.toLowerCase() !== 'svg') return;
+                    const newSvg = clonedDoc.importNode(svgEl, true);
+                    if (img.getAttribute('width')) newSvg.setAttribute('width', img.getAttribute('width'));
+                    if (img.getAttribute('height')) newSvg.setAttribute('height', img.getAttribute('height'));
+                    if (!newSvg.getAttribute('width') && img.width) newSvg.setAttribute('width', String(img.width));
+                    if (!newSvg.getAttribute('height') && img.height) newSvg.setAttribute('height', String(img.height));
+                    img.replaceWith(newSvg);
+                  });
+                } catch {}
+              }
+            }
+          });
+          } catch (renderErr) {
+            console.warn('[Export] html2canvas渲染失败:', renderErr);
+            Logger.warn('html2canvas渲染失败', { message: renderErr?.message });
+            throw renderErr;
+          }
+        };
+
+        const renderTiled = async () => {
+          // 根据内容尺寸动态计算分块大小
+          const baseTileLimit = contentSize < 1500 ? 10000 : contentSize < 3500 ? 8000 : 6000;
+          const tileLimit = Math.min(baseTileLimit, maxSide);
+          const minTileH = Math.max(128, Math.floor(height * 0.05)); // 至少5%的高度
+          const tileH = Math.max(minTileH, Math.floor(tileLimit / Math.max(0.5, scaleClamped)));
+          Logger.log('分块渲染参数', { tileLimit, tileH, minTileH });
+          const out = document.createElement('canvas');
+          const outW = Math.max(1, Math.floor(width * scaleClamped));
+          const outH = Math.max(1, Math.floor(height * scaleClamped));
+          out.width = outW; out.height = outH;
+          const octx = out.getContext('2d', { alpha: false });
+          octx.fillStyle = '#ffffff';
+          octx.fillRect(0, 0, outW, outH);
+          let y = 0;
+          while (y < height) {
+            const h = Math.min(tileH, height - y);
+            const cv = await html2canvas(iframeDoc.documentElement, {
+              scale: scaleClamped,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: '#ffffff',
+              logging: false,
+              foreignObjectRendering: false,
+              width: width,
+              height: h,
+              windowWidth: width,
+              windowHeight: height,
+              scrollX: 0,
+              scrollY: 0,
+              x: 0,
+              y: y,
+              imageTimeout: 0,
+              onclone: (clonedDoc, clonedWin) => {
+                // 全局禁用错误事件，防止图片加载失败导致导出中断
+                try {
+                  clonedDoc.addEventListener('error', (e) => { e.preventDefault(); e.stopPropagation(); return false; }, true);
+                  if (clonedWin) {
+                    clonedWin.onerror = () => false;
+                    clonedWin.addEventListener('error', (e) => { e.preventDefault(); e.stopPropagation(); return false; }, true);
+                  }
+                } catch {}
+                
+                clonedDoc.querySelectorAll('script').forEach(s => s.remove());
+                clonedDoc.querySelectorAll('*').forEach(el => {
+                  for (const a of Array.from(el.attributes)) {
+                    if (/^on/i.test(a.name)) el.removeAttribute(a.name);
+                  }
+                });
+                // 应用位图资源内联，确保切片渲染同样完整
+                // 注意：<img> 已在原始文档中替换，这里只处理 CSS 背景
+                try {
+                  const dv2 = clonedDoc.defaultView || window;
+                  const replaceCssUrls = (val) => {
+                    if (!val || typeof val !== 'string') return val;
+                    return val.replace(/url\(([^)]+)\)/ig, (m, p1) => {
+                      let raw = String(p1).trim().replace(/^['"]/,'').replace(/['"]$/,'');
+                      const abs = (() => { try { return new URL(raw, clonedDoc.baseURI || window.location.href).href; } catch { return raw; } })();
+                      const data = inlinedImageMap[abs];
+                      if (data) return `url("${data}")`;
+                      return m;
+                    });
+                  };
+                  Array.from(clonedDoc.querySelectorAll('*')).forEach(el => {
+                    try {
+                      const cs = dv2.getComputedStyle(el);
+                      const bg = cs.getPropertyValue('background-image');
+                      const mask = cs.getPropertyValue('mask-image');
+                      const borderImg = cs.getPropertyValue('border-image-source');
+                      const bg2 = replaceCssUrls(bg);
+                      const mask2 = replaceCssUrls(mask);
+                      const border2 = replaceCssUrls(borderImg);
+                      if (bg2 && bg2 !== bg) el.style.backgroundImage = bg2;
+                      if (mask2 && mask2 !== mask) el.style.maskImage = mask2;
+                      if (border2 && border2 !== borderImg) el.style.borderImageSource = border2;
+                    } catch {}
+                  });
+                } catch {}
+                try {
+                  if (inlinedFontCss) {
+                    const s = clonedDoc.createElement('style');
+                    s.setAttribute('data-inline-fonts', 'true');
+                    s.textContent = inlinedFontCss;
+                    clonedDoc.head.insertBefore(s, clonedDoc.head.firstChild || null);
+                    Array.from(clonedDoc.querySelectorAll('link[rel="stylesheet"]')).forEach(l => {
+                      const href = l.href || l.getAttribute('href') || '';
+                      if (/font[- ]?awesome|all\.min\.css/i.test(href)) l.remove();
+                    });
+                  }
+                } catch {}
+                try {
+                  const nodes = Array.from(clonedDoc.querySelectorAll('[data-fa-content]'));
+                  nodes.forEach(el => {
+                    if (!el.textContent || !el.textContent.trim()) {
+                      const glyph = el.getAttribute('data-fa-content');
+                      const fam = el.getAttribute('data-fa-font') || 'Font Awesome 6 Free, Font Awesome 6 Pro, Font Awesome 5 Free';
+                      const weight = el.getAttribute('data-fa-weight') || '900';
+                      const span = clonedDoc.createElement('span');
+                      span.textContent = glyph;
+                      span.style.fontFamily = fam;
+                      span.style.fontWeight = weight;
+                      span.style.fontStyle = 'normal';
+                      span.style.lineHeight = '1';
+                      span.style.display = 'inline-block';
+                      span.style.webkitFontSmoothing = 'antialiased';
+                      span.style.mozOsxFontSmoothing = 'grayscale';
+                      el.appendChild(span);
+                    }
+                    el.removeAttribute('data-fa-content');
+                    el.removeAttribute('data-fa-font');
+                    el.removeAttribute('data-fa-weight');
+                  });
+                } catch {}
+                try {
+                  const dv2 = clonedDoc.defaultView || window;
+                  const els = Array.from(clonedDoc.querySelectorAll('*'));
+                  els.forEach(el => {
+                    try {
+                      const st = dv2.getComputedStyle(el);
+                      const oy = st.overflowY, ox = st.overflowX;
+                      const needY = (oy === 'auto' || oy === 'scroll' || oy === 'hidden') && (el.scrollHeight - el.clientHeight > 2);
+                      const needX = (ox === 'auto' || ox === 'scroll' || ox === 'hidden') && (el.scrollWidth - el.clientWidth > 2);
+                      if (needY) {
+                        el.style.minHeight = '0';
+                        el.style.maxHeight = 'none';
+                        el.style.height = el.scrollHeight + 'px';
+                        el.style.overflowY = 'visible';
+                      }
+                      if (needX) {
+                        el.style.minWidth = '0';
+                        el.style.maxWidth = 'none';
+                        el.style.width = Math.max(el.scrollWidth, el.clientWidth) + 'px';
+                        el.style.overflowX = 'visible';
+                      }
+                    } catch {}
+                  });
+                } catch {}
+                try {
+                  const XLINK = 'http://www.w3.org/1999/xlink';
+                  const svgNS = 'http://www.w3.org/2000/svg';
+                  const parser = new DOMParser();
+                  const uses = Array.from(clonedDoc.querySelectorAll('use'));
+                  uses.forEach(u => {
+                    let href = u.getAttribute('href') || u.getAttributeNS(XLINK, 'href');
+                    if (!href) return;
+                    const idx = href.indexOf('#');
+                    if (idx === -1) return;
+                    const base = href.slice(0, idx);
+                    const symbolId = href.slice(idx + 1);
+                    let target = null;
+                    if (!base) {
+                      target = clonedDoc.getElementById(symbolId);
+                    } else {
+                      const xml = externalSpriteMap[(() => { try { return new URL(base, window.location.href).href; } catch { return base; } })()];
+                      if (xml) {
+                        const spriteDoc = parser.parseFromString(xml, 'image/svg+xml');
+                        target = spriteDoc.getElementById(symbolId);
+                      }
+                    }
+                    if (!target) return;
+                    const wrapper = clonedDoc.createElementNS(svgNS, 'svg');
+                    const vb = target.getAttribute('viewBox');
+                    if (vb) wrapper.setAttribute('viewBox', vb);
+                    ['x','y','width','height','transform'].forEach(a => { if (u.hasAttribute(a)) wrapper.setAttribute(a, u.getAttribute(a)); });
+                    if (u.getAttribute('class')) wrapper.setAttribute('class', u.getAttribute('class'));
+                    if (u.getAttribute('style')) wrapper.setAttribute('style', u.getAttribute('style'));
+                    Array.from(target.childNodes).forEach(ch => wrapper.appendChild(ch.cloneNode(true)));
+                    u.replaceWith(wrapper);
+                  });
+                } catch {}
+                try {
+                  const parser = new DOMParser();
+                  const imgs = Array.from(clonedDoc.querySelectorAll('img'));
+                  imgs.forEach(img => {
+                    const src = img.getAttribute('src') || '';
+                    const lower = src.toLowerCase();
+                    let svgText = null;
+                    if (lower.startsWith('data:image/svg+xml')) {
+                      const comma = src.indexOf(',');
+                      const meta = src.slice(0, comma).toLowerCase();
+                      const payload = src.slice(comma + 1);
+                      try {
+                        svgText = meta.includes(';base64') ? atob(payload) : decodeURIComponent(payload);
+                      } catch {}
+                    } else if (lower.endsWith('.svg')) {
+                      let abs;
+                      try { abs = new URL(src, window.location.href).href; } catch { abs = src; }
+                      svgText = externalSvgMap[abs] || null;
+                    }
+                    if (!svgText) return;
+                    const doc2 = parser.parseFromString(svgText, 'image/svg+xml');
+                    const svgEl = doc2.documentElement;
+                    if (!svgEl || svgEl.nodeName.toLowerCase() !== 'svg') return;
+                    const newSvg = clonedDoc.importNode(svgEl, true);
+                    if (img.getAttribute('width')) newSvg.setAttribute('width', img.getAttribute('width'));
+                    if (img.getAttribute('height')) newSvg.setAttribute('height', img.getAttribute('height'));
+                    if (!newSvg.getAttribute('width') && img.width) newSvg.setAttribute('width', String(img.width));
+                    if (!newSvg.getAttribute('height') && img.height) newSvg.setAttribute('height', String(img.height));
+                    img.replaceWith(newSvg);
+                  });
+                } catch {}
+              }
+            });
+            octx.drawImage(cv, 0, Math.floor(y * scaleClamped));
+            y += h;
+          }
+          return out;
+        };
+
+        // 动态计算 FO 和分块渲染阈值
+        const FO_LIMIT = Math.min(16000, Math.max(8000, maxSide * 1.5)); // 根据 maxSide 动态调整
+        const allowFO = (width * scaleClamped <= FO_LIMIT && height * scaleClamped <= FO_LIMIT);
+        const tileSideLimit = Math.max(6144, maxSide * 0.75);
+        const tilePixelLimit = Math.max(120 * 1024 * 1024, maxPixels * 0.6);
+        const needTile = (!allowFO) && ((width * scaleClamped > tileSideLimit) || (height * scaleClamped > tileSideLimit) || ((width * scaleClamped) * (height * scaleClamped) > tilePixelLimit));
+        Logger.log('渲染策略', { allowFO, needTile, FO_LIMIT, tileSideLimit, tilePixelLimit });
+        const PREFER_EFFECTS = true; // 优先保留阴影等视觉效果
+        const scoreCanvasDetail = (cv) => {
+          try {
+            const w = cv.width, h = cv.height; if (!w || !h) return 0;
+            const ctx = cv.getContext('2d');
+            const stepX = Math.max(4, Math.floor(w / 96));
+            const stepY = Math.max(4, Math.floor(h / 96));
+            let score = 0;
+            for (let y = stepY; y < h - stepY; y += stepY) {
+              const row = ctx.getImageData(0, y, w, 1).data;
+              for (let x = stepX * 4; x < (w - stepX) * 4; x += stepX * 4) {
+                const r = row[x], g = row[x + 1], b = row[x + 2];
+                const r2 = row[x - stepX * 4], g2 = row[x - stepX * 4 + 1], b2 = row[x - stepX * 4 + 2];
+                const dr = Math.abs(r - r2), dg = Math.abs(g - g2), db = Math.abs(b - b2);
+                score += dr + dg + db;
+              }
+            }
+            return score;
+          } catch { return 0; }
+        };
+        let canvas;
+        try {
+          if (needTile || !PREFER_EFFECTS) {
+            canvas = needTile ? await renderTiled() : await renderWith(allowFO);
+          } else {
+            // 同时尝试 FO 和非FO，选细节更多的结果
+            const c1 = await renderWith(true);
+            const c2 = await renderWith(false);
+            const s1 = scoreCanvasDetail(c1);
+            const s2 = scoreCanvasDetail(c2);
+            canvas = s1 >= s2 ? c1 : c2;
+            Logger.log('效果优先选择', { sFO: s1, sCanvas: s2, chosen: s1 >= s2 ? 'FO' : 'Canvas' });
+          }
+          Logger.log('渲染完成', { width, height, scale: scaleClamped, tiled: needTile });
+        } catch (canvasErr) {
+          console.warn('[Export] Canvas渲染异常，尝试降级渲染:', canvasErr);
+          Logger.warn('Canvas渲染异常，尝试降级', { message: canvasErr?.message });
+          // 降级：使用最简单的渲染模式
+          canvas = await renderWith(false);
+          Logger.log('降级渲染完成');
+        }
+
+        // 简单白屏检测（全白/全透明）
+        const nearlyWhite = (cv) => {
+          try {
+            if (!cv || !cv.width || !cv.height) return true;
+            const ctx = cv.getContext('2d');
+            const sample = ctx.getImageData(0, 0, Math.min(80, cv.width), Math.min(80, cv.height)).data;
+            for (let i = 0; i < sample.length; i += 4) {
+              const a = sample[i + 3];
+              if (a > 5) {
+                const r = sample[i], g = sample[i + 1], b = sample[i + 2];
+                if (!(r > 245 && g > 245 && b > 245)) return false;
+              }
+            }
+            return true;
+          } catch { return false; }
+        };
+
+        if (allowFO && nearlyWhite(canvas)) {
+          console.warn('foreignObject 渲染可能失败，切换到 canvas 渲染');
+          canvas = await renderWith(false);
+        }
+
+        const cropWithBleed = (cv, bounds, bleed, scale, docWpx, docHpx) => {
+          try {
+            // 计算两侧与上下的可用空间，并将出血量限制为“可用空间的最小值”，保证左右/上下尽量对称
+            const leftSpace = Math.max(0, Math.floor(bounds.x));
+            const topSpace = Math.max(0, Math.floor(bounds.y));
+            const rightSpace = Math.max(0, Math.floor(docWpx - (bounds.x + bounds.w)));
+            const bottomSpace = Math.max(0, Math.floor(docHpx - (bounds.y + bounds.h)));
+            const bleedX = Math.min(Math.max(0, bleed), leftSpace, rightSpace);
+            const bleedY = Math.min(Math.max(0, bleed), topSpace, bottomSpace);
+
+            let x = Math.max(0, Math.floor(bounds.x - bleedX));
+            let y = Math.max(0, Math.floor(bounds.y - bleedY));
+            let w = Math.min(docWpx - x, Math.max(1, Math.ceil(bounds.w + bleedX * 2)));
+            let h = Math.min(docHpx - y, Math.max(1, Math.ceil(bounds.h + bleedY * 2)));
+
+            // 向内取整起点，取消额外像素容差，避免右/下出现多余1-2px白边
+            const pixelTolerance = 0;
+            const sx = Math.max(0, Math.ceil(x * scale));
+            const sy = Math.max(0, Math.ceil(y * scale));
+            const sw = Math.max(1, Math.round(w * scale + pixelTolerance));
+            const sh = Math.max(1, Math.round(h * scale + pixelTolerance));
+
+            const out = document.createElement('canvas');
+            out.width = sw; out.height = sh;
+            const ctx = out.getContext('2d', { alpha: false });
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(cv, sx, sy, sw, sh, 0, 0, sw, sh);
+            
+            // 计算需要补齐的顶部留白（使顶部与底部一致）
+            const currentTopPad = Math.round(y * scale);
+            const currentBottomPad = Math.round((docHpx - (y + h)) * scale);
+            const extraTopPad = Math.max(0, currentBottomPad - currentTopPad);
+
+            // 如果需要补齐顶部留白，创建新canvas
+            if (extraTopPad > 0) {
+              const padded = document.createElement('canvas');
+              padded.width = sw;
+              padded.height = sh + extraTopPad;
+              const pctx = padded.getContext('2d', { alpha: false });
+              pctx.fillStyle = '#ffffff';
+              pctx.fillRect(0, 0, padded.width, padded.height);
+              pctx.imageSmoothingEnabled = true;
+              pctx.imageSmoothingQuality = 'high';
+              pctx.drawImage(out, 0, extraTopPad);
+              return padded;
+            }
+            
+            return out;
+          } catch { return cv; }
+        };
+        const downscaleCanvas = (cv, ratio) => {
+          try {
+            if (!cv || ratio >= 1) return cv;
+            const w = Math.max(1, Math.floor(cv.width * ratio));
+            const h = Math.max(1, Math.floor(cv.height * ratio));
+            const out = document.createElement('canvas');
+            out.width = w; out.height = h;
+            const ctx = out.getContext('2d', { alpha: false });
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(cv, 0, 0, cv.width, cv.height, 0, 0, w, h);
+            return out;
+          } catch { return cv; }
+        };
+        // 先裁掉页面外边距（无边框），再进行可选的超采样下采样以提升锐度
+        const dynamicBleed = Math.max(EXPORT_BLEED, 0);
+        let outCanvas = cropWithBleed(canvas, contentBounds, dynamicBleed, scaleClamped, width, height);
+        let postRatio = 1;
+        if (scaleClamped > preferredScale * 1.02) {
+          const ratio = Math.max(0.1, Math.min(1, preferredScale / scaleClamped));
+          outCanvas = downscaleCanvas(outCanvas, ratio);
+          postRatio = ratio;
+        }
+        // 无边距模式下：再做一次像素级边缘修剪，基于“背景色”自适应（不局限白色/米色）
+        try {
+          const wantNoBorder = String(borderSelect?.value || '0') === '0';
+          if (wantNoBorder && ADV_TRIM_EDGES) {
+            const trimBackgroundEdges = (cv) => {
+              try {
+                const w = cv.width, h = cv.height;
+                if (!w || !h) return cv;
+                const ctx = cv.getContext('2d');
+                // 根据图片尺寸动态调整裁剪参数
+                const MAX = Math.min(512, Math.max(64, Math.floor(Math.min(w, h) * 0.15))); // 最多裁剪15%
+                const TOL = 28;            // 颜色容差（每通道）更宽松，兼容轻微阴影
+                const sample = (x, y) => {
+                  const d = ctx.getImageData(x, y, 1, 1).data; return [d[0], d[1], d[2], d[3]];
+                };
+                const near = (r,g,b,a, rb,gb,bb,ab) => (a < 10) || (Math.abs(r-rb) <= TOL && Math.abs(g-gb) <= TOL && Math.abs(b-bb) <= TOL);
+                // 以四角颜色作为各边背景参考
+                const topBg = sample(0,0);
+                const leftBg = sample(0,0);
+                const rightBg = sample(w-1, 0);
+                const bottomBg = sample(0, h-1);
+                const rowIsBg = (y, bg) => {
+                  const d = ctx.getImageData(0, y, w, 1).data;
+                  let bgCount = 0, total = d.length / 4;
+                  for (let i = 0; i < d.length; i += 4) {
+                    if (near(d[i], d[i+1], d[i+2], d[i+3], bg[0], bg[1], bg[2], bg[3])) bgCount++;
+                  }
+                  return bgCount / total >= 0.98; // 至少98%为背景
+                };
+                const colIsBg = (x, bg) => {
+                  const d = ctx.getImageData(x, 0, 1, h).data;
+                  let bgCount = 0, total = d.length / 4;
+                  for (let i = 0; i < d.length; i += 4) {
+                    if (near(d[i], d[i+1], d[i+2], d[i+3], bg[0], bg[1], bg[2], bg[3])) bgCount++;
+                  }
+                  return bgCount / total >= 0.98;
+                };
+                let top = 0, bottom = 0, left = 0, right = 0;
+                while (top < Math.min(MAX, h - 1) && rowIsBg(top, topBg)) top++;
+                while (bottom < Math.min(MAX, h - 1 - top) && rowIsBg(h - 1 - bottom, bottomBg)) bottom++;
+                while (left < Math.min(MAX, w - 1) && colIsBg(left, leftBg)) left++;
+                while (right < Math.min(MAX, w - 1 - left) && colIsBg(w - 1 - right, rightBg)) right++;
+                const fracRowBg = (y, bg) => {
+                  const d = ctx.getImageData(0, y, w, 1).data; let c = 0; for (let i=0;i<d.length;i+=4){ if(near(d[i],d[i+1],d[i+2],d[i+3], bg[0],bg[1],bg[2],bg[3])) c++; } return c/(d.length/4);
+                };
+                const fracColBg = (x, bg) => {
+                  const d = ctx.getImageData(x, 0, 1, h).data; let c = 0; for (let i=0;i<d.length;i+=4){ if(near(d[i],d[i+1],d[i+2],d[i+3], bg[0],bg[1],bg[2],bg[3])) c++; } return c/(d.length/4);
+                };
+                let extraTop = 0, extraLeft = 0;
+                while (extraTop < 4 && top < h-1 && fracRowBg(top, topBg) >= 0.85) { top++; extraTop++; }
+                while (extraLeft < 4 && left < w-1 && fracColBg(left, leftBg) >= 0.85) { left++; extraLeft++; }
+                // 使顶部和底部留白一致：取两者中较小的裁剪量
+                const verticalTrim = Math.min(top, bottom);
+                top = verticalTrim;
+                bottom = verticalTrim;
+                // 使左右留白一致：取两者中较小的裁剪量
+                const horizontalTrim = Math.min(left, right);
+                left = horizontalTrim;
+                right = horizontalTrim;
+                
+                if (left || right || top || bottom) {
+                  const out = document.createElement('canvas');
+                  const nw = Math.max(1, w - left - right);
+                  const nh = Math.max(1, h - top - bottom);
+                  out.width = nw; out.height = nh;
+                  out.getContext('2d').drawImage(cv, left, top, nw, nh, 0, 0, nw, nh);
+                  return out;
+                }
+                return cv;
+              } catch { return cv; }
+            };
+            outCanvas = trimBackgroundEdges(outCanvas);
+            // 跳过额外的单边裁剪，保持顶部和底部留白一致
+          } else {
+            Logger.log('跳过背景去边裁切', { wantNoBorder, ADV_TRIM_EDGES });
+          }
+        } catch {}
+        // 额外强剪：再从左与上各多裁 2px，抹掉极窄缝隙
+        if (FORCE_EXTRA_TRIM) {
+          try {
+            const cv3 = outCanvas; const w3 = cv3.width, h3 = cv3.height;
+            if (w3 > 2 && h3 > 2) {
+              const out = document.createElement('canvas');
+              out.width = w3 - 2; out.height = h3 - 2;
+              out.getContext('2d').drawImage(cv3, 2, 2, w3 - 2, h3 - 2, 0, 0, w3 - 2, h3 - 2);
+              outCanvas = out;
+            }
+          } catch {}
+        }
+        // 统一四边留白（导出像素），由“边距”选择控制
+        try {
+          const pad = Math.max(0, parseInt(borderSelect?.value || '0', 10) || 0);
+          if (pad > 0) {
+            const padded = document.createElement('canvas');
+            padded.width = outCanvas.width + pad * 2;
+            padded.height = outCanvas.height + pad * 2;
+            const pctx = padded.getContext('2d', { alpha: false });
+            pctx.fillStyle = '#ffffff';
+            pctx.fillRect(0, 0, padded.width, padded.height);
+            pctx.drawImage(outCanvas, pad, pad);
+            outCanvas = padded;
+          }
+        } catch {}
+        outCanvas.toBlob((blob) => {
+          try {
+            if (!blob) { 
+              alert('导出失败：生成图片为空'); 
+              Logger.error('导出失败', { reason: '生成图片为空' });
+              return; 
+            }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `html-preview-100-${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 100);
+            Logger.log('PNG保存完成', { size: blob.size });
+            console.log('✅ 导出成功');
+          } catch (blobErr) {
+            console.error('❌ Blob处理失败:', blobErr);
+            Logger.error('Blob处理失败', { message: blobErr?.message });
+            alert('导出失败：' + (blobErr?.message || '未知错误'));
+          } finally {
+            // 恢复原始图片 src
+            try {
+              Array.from(iframeDoc.images || []).forEach(img => {
+                const orig = img.getAttribute('data-original-src');
+                if (orig) {
+                  img.setAttribute('src', orig);
+                  img.removeAttribute('data-original-src');
+                }
+              });
+              Logger.log('原始图片已恢复');
+            } catch {}
+            
+            autoExportBtn.textContent = '⚡ 一键导出(100%)';
+            autoExportBtn.disabled = !htmlInput.value.trim();
+            const s = Logger.check();
+            Logger.log('导出结束', s);
+          }
+        }, 'image/png');
+
+      } catch (err) {
+        console.error('一键导出失败:', err);
+        Logger.error('一键导出失败', { message: err?.message, type: err?.constructor?.name });
+        alert('导出失败：' + (err?.message || err?.type || '未知错误'));
+        
+        // 恢复原始图片 src
+        try {
+          const iframeDoc = preview.contentDocument || preview.contentWindow?.document;
+          if (iframeDoc) {
+            Array.from(iframeDoc.images || []).forEach(img => {
+              const orig = img.getAttribute('data-original-src');
+              if (orig) {
+                img.setAttribute('src', orig);
+                img.removeAttribute('data-original-src');
+              }
+            });
+            Logger.log('原始图片已恢复（异常路径）');
+          }
+        } catch {}
+        
+        autoExportBtn.textContent = '⚡ 一键导出(100%)';
+        autoExportBtn.disabled = !htmlInput.value.trim();
+        const s = Logger.check();
+        Logger.log('导出结束', s);
+      }
+    }
+
+    
+
+    // 已移除截图导出功能
+
+    // 监听输入事件
+    htmlInput.addEventListener('input', updatePreview);
+    // 监听显示比例切换
+    ratioSelect.addEventListener('change', (e) => {
+      applyDisplayRatio(e.target.value);
+      requestAnimationFrame(() => autoFixTopBlank());
+    });
+    if (logToggleBtn) logToggleBtn.addEventListener('click', () => { const show = Logger.toggle(); Logger.log('切换日志面板', { show }); });
+    if (exportLogBtn) exportLogBtn.addEventListener('click', () => { Logger.export(); Logger.log('导出日志'); });
+    // 右侧简化后，无宽度/边距输入
+    window.addEventListener('resize', () => requestAnimationFrame(updateRatioScale));
+
+    // 预览文档每次加载后，多次尝试修正顶部空白并重算比例（应对字体/图片异步加载后的布局变化）
+    preview.addEventListener('load', () => {
+      const run = () => { autoFixTopBlank(); updateRatioScale(); };
+      requestAnimationFrame(run);
+      setTimeout(run, 120);
+      setTimeout(run, 400);
+      setTimeout(run, 800);
+      setTimeout(run, 1200);
+      Logger.log('预览加载完成');
+    });
+
+    // 页面加载完成
+    console.log('[App] 初始化完成');
+    
+    // 加载示例代码
+    htmlInput.value = exampleHTML;
+    updatePreview();
+    applyDisplayRatio(ratioSelect.value);
+    updateRatioScale();
+    // 右侧简化后，移除宽度/边距初始赋值
+  </script>
+</body>
+</html>
